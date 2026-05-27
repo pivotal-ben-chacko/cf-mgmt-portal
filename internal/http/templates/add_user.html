@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Add user to role · cf-mgmt portal</title>
+  {{ template "styles" . }}
+</head>
+<body>
+  {{ template "header" . }}
+  <main>
+    <a href="/" class="back">← back to portal</a>
+    <div class="card">
+      <h2>Add a user to a space role</h2>
+      <p class="muted">
+        You must already hold OrgManager on the target org.
+        The change is captured as a GitLab MR for platform-team review.
+      </p>
+      <form method="post" action="/actions/add-user-to-role" style="margin-top: 16px;">
+        <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+        <label>Org name<input name="org" required autofocus></label>
+        <label>Space name<input name="space" required></label>
+        <label>Role
+          <select name="role" required>
+            <option value="developer">developer</option>
+            <option value="manager">manager</option>
+            <option value="auditor">auditor</option>
+            <option value="supporter">supporter</option>
+          </select>
+        </label>
+        <label>User origin
+          <select name="origin" required>
+            <option value="ldap" selected>ldap</option>
+            <option value="saml">saml</option>
+            <option value="internal">internal</option>
+          </select>
+        </label>
+        <label>Target user (LDAP id, e.g. F920U2K)<input name="target_user" required></label>
+        <button type="submit" class="primary">Open MR</button>
+      </form>
+    </div>
+  </main>
+  {{ template "footer" . }}
+</body>
+</html>

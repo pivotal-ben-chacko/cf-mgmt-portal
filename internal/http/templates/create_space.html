@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Create space · cf-mgmt portal</title>
+  {{ template "styles" . }}
+</head>
+<body>
+  {{ template "header" . }}
+  <main>
+    <a href="/" class="back">← back to portal</a>
+    <div class="card">
+      <h2>Create a new space</h2>
+      <p class="muted">
+        You must already hold OrgManager on the target org.
+        The new space inherits defaults from <code>spaceDefaults.yml</code>.
+      </p>
+      <form method="post" action="/actions/create-space" style="margin-top: 16px;">
+        <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+        <label>Org name (must already exist)<input name="org" required autofocus></label>
+        <label>New space name<input name="space" required></label>
+        <div class="checkbox">
+          <input type="checkbox" id="add-self" name="add_self_as_manager" value="yes" checked>
+          <label for="add-self">Also add me ({{ .User }}) as space-manager on the new space</label>
+        </div>
+        <button type="submit" class="primary">Open MR</button>
+      </form>
+    </div>
+  </main>
+  {{ template "footer" . }}
+</body>
+</html>

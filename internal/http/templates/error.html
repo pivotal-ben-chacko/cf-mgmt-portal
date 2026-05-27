@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ .Status }} {{ .StatusText }} · cf-mgmt portal</title>
+  {{ template "styles" . }}
+</head>
+<body>
+  {{ template "header" . }}
+  <main>
+    <div class="card">
+      <h2>Something went wrong</h2>
+      <div class="alert alert-error">
+        <p class="status-line">{{ .Status }} {{ .StatusText }}</p>
+        <p>{{ .Message }}</p>
+      </div>
+      <p style="margin-top: 16px;"><a href="/" class="back">← back to portal</a></p>
+    </div>
+  </main>
+  {{ template "footer" . }}
+</body>
+</html>

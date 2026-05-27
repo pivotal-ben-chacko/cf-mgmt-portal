@@ -1,0 +1,33 @@
+---
+applications:
+- name: cf-mgmt-portal
+  memory: 256M
+  instances: 1
+  health-check-type: http
+  health-check-http-endpoint: /healthz
+  buildpacks:
+    - go_buildpack
+  env:
+    GOPACKAGENAME: github.com/example/cf-mgmt-portal
+    GO_INSTALL_PACKAGE_SPEC: ./cmd/portal
+    # Set the rest via `cf set-env` or a user-provided service.
+    #
+    # General:
+    #   PORTAL_URL                  https://portal.<system-domain>
+    #   SESSION_KEY                 <32+ random chars; rotate to invalidate sessions>
+    #   FOUNDATION                  fog
+    #   TARGET_BRANCH               development     (optional; default "development")
+    #
+    # GitLab (user login via OAuth + repo writes via PAT):
+    #   GITLAB_URL                  https://gitlab.<host>
+    #   GITLAB_OAUTH_CLIENT_ID      <from GitLab OAuth app>
+    #   GITLAB_OAUTH_CLIENT_SECRET  <same>
+    #   GITLAB_TOKEN                <project access token, api scope>
+    #   CONFIG_REPO_PROJECT         Global/ofs-lowers/fog-cf-mgmt   (human path; client URL-encodes)
+    #   PLATFORM_TEAM_GROUP         platform-cf-admins
+    #
+    # CF foundation (UAA service-account for authorization checks):
+    #   CF_API_URL                  https://api.<system-domain>
+    #   UAA_URL                     https://uaa.<system-domain>
+    #   UAA_CLIENT_ID               cf-mgmt-portal
+    #   UAA_CLIENT_SECRET           <secret>

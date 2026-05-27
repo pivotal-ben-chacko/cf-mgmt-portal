@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ if .Success }}Done{{ else }}Failed{{ end }} · cf-mgmt portal</title>
+  {{ template "styles" . }}
+  <style>
+    .terminal {
+      background: #1e2226;
+      color: #e6e8eb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      padding: 18px 22px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin-top: 16px;
+      white-space: nowrap;
+    }
+    .terminal .prompt { color: #6fa8dc; user-select: none; }
+    .terminal .row { display: flex; gap: 14px; align-items: baseline; }
+    .terminal .row .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .terminal .row .meta { white-space: nowrap; }
+    .terminal .ok { color: #6fcf97; }
+    .terminal .err { color: #f47174; }
+    .terminal .skip { color: #c9a96a; }
+    .terminal .detail { color: #8a8f96; }
+    .terminal .summary {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #2c3036;
+      font-weight: 500;
+    }
+    .terminal .mr { margin-top: 10px; word-break: break-all; white-space: normal; }
+    .terminal .mr a { color: #6fa8dc; text-decoration: none; }
+    .terminal .mr a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  {{ template "header" . }}
+  <main>
+    <a href="/" class="back">← back to portal</a>
+    <div class="card">
+      <h2>{{ if .Success }}Done{{ else }}Failed{{ end }}</h2>
+      {{ if .Headline }}<p>{{ .Headline }}</p>{{ end }}
+      <div class="terminal">
+        <div><span class="prompt">$</span> portal: {{ .Action }}</div>
+        <div>&nbsp;</div>
+        {{ range .Steps }}
+        <div class="row">
+          <span class="title">
+            {{- if eq .Status "ok" }}<span class="ok">→</span>
+            {{- else if eq .Status "error" }}<span class="err">→</span>
+            {{- else }}<span class="skip">→</span>{{ end }}
+            {{ .Title }}
+          </span>
+          <span class="meta">
+            {{- if eq .Status "ok" }}<span class="ok">✓ {{ .DurationLabel }}</span>
+            {{- else if eq .Status "error" }}<span class="err">✗ {{ .DurationLabel }}</span>
+            {{- else }}<span class="skip">○ skipped</span>{{ end }}
+            {{ if .Detail }}<span class="detail"> · {{ .Detail }}</span>{{ end }}
+          </span>
+        </div>
+        {{ end }}
+        <div class="summary">
+          {{- if .Success }}<span class="ok">✓ Done in {{ .Total }}</span>
+          {{- else }}<span class="err">✗ Failed after {{ .Total }}</span>{{ end }}
+        </div>
+        {{ if .MRURL }}<div class="mr">MR: <a href="{{ .MRURL }}">{{ .MRURL }}</a></div>{{ end }}
+      </div>
+    </div>
+  </main>
+  {{ template "footer" . }}
+</body>
+</html>

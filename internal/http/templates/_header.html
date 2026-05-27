@@ -1,0 +1,12 @@
+{{- define "header" -}}
+<header>
+  <h1>cf-mgmt portal</h1>
+  {{- if .User }}
+  <div class="user-info">
+    {{ .User }}
+    {{- if .Foundation }} · <code>{{ .Foundation }}</code>{{ end -}}
+    {{- " " -}}· <a href="/auth/logout">Sign out</a>
+  </div>
+  {{- end }}
+</header>
+{{- end -}}

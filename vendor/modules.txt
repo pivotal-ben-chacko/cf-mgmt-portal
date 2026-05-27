@@ -1,0 +1,22 @@
+# github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
+## explicit
+github.com/op/go-logging
+# github.com/pkg/errors v0.9.1
+## explicit
+github.com/pkg/errors
+# github.com/vmwarepivotallabs/cf-mgmt v0.0.0-00010101000000-000000000000 => /Users/ben/Repos/cf-mgmt
+## explicit; go 1.23.2
+github.com/vmwarepivotallabs/cf-mgmt/config
+github.com/vmwarepivotallabs/cf-mgmt/util
+# github.com/xchapter7x/lo v0.0.0-20160804235750-e33b245fc7a8
+## explicit
+github.com/xchapter7x/lo
+# golang.org/x/oauth2 v0.30.0
+## explicit; go 1.23.0
+golang.org/x/oauth2
+golang.org/x/oauth2/clientcredentials
+golang.org/x/oauth2/internal
+# gopkg.in/yaml.v2 v2.4.0
+## explicit; go 1.15
+gopkg.in/yaml.v2
+# github.com/vmwarepivotallabs/cf-mgmt => /Users/ben/Repos/cf-mgmt
