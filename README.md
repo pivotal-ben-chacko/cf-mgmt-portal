@@ -60,4 +60,3 @@ real pipeline); `vendor/` is committed.
 cf push   # uses manifest.yml + the Go buildpack
 ```
 
-See [CLAUDE.md](CLAUDE.md) for architecture notes and conventions.
