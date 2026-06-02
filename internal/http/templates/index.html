@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>cf-mgmt portal</title>
+  <title>CF Management Portal</title>
   {{ template "styles" . }}
 </head>
 <body>
@@ -12,8 +12,9 @@
       <div class="card">
         <h2>Self-service actions</h2>
         <ul class="actions">
-          <li><a href="/actions/add-user-to-role">→ Add a user to a space role</a></li>
-          <li><a href="/actions/create-space">→ Create a new space in an existing org</a></li>
+          <li><a href="/actions/manage-users"><img src="/assets/user.png" class="action-icon" alt="">Add / remove / update space users</a></li>
+          <li><a href="/actions/manage-groups"><img src="/assets/user-group.png" class="action-icon" alt="">Add / remove / update space groups</a></li>
+          <li><a href="/actions/create-space"><img src="/assets/space.png" class="action-icon" alt="">Create a new space in an existing org</a></li>
         </ul>
         <p class="muted" style="margin-top: 16px;">
           All actions produce a GitLab MR for platform-team review.

@@ -1,6 +1,9 @@
 {{- define "header" -}}
 <header>
-  <h1>cf-mgmt portal</h1>
+  <div class="brand">
+    <img src="/assets/fiserv-logo.svg" alt="Fiserv" class="logo">
+    <h1>CF Management Portal</h1>
+  </div>
   {{- if .User }}
   <div class="user-info">
     {{ .User }}

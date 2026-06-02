@@ -2,3 +2,7 @@
 /cf-mgmt-portal
 .envrc
 .env
+
+# macOS
+.DS_Store
+CLAUDE.md

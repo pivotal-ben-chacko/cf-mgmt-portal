@@ -20,6 +20,12 @@ func (s Step) DurationLabel() string {
 	return formatDuration(s.Duration)
 }
 
+// DurationMS is the step's duration in whole milliseconds, used by the result
+// page's reveal animation to pace each step by how long it actually took.
+func (s Step) DurationMS() int64 {
+	return s.Duration.Milliseconds()
+}
+
 // Recorder collects timing and outcomes for each step of a handler so the
 // result page can show a terminal-style log. Not safe for concurrent use; one
 // Recorder per request.

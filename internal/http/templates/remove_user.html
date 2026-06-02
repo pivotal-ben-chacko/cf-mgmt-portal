@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Add user to role · CF Management Portal</title>
+  <title>Remove user from role · CF Management Portal</title>
   {{ template "styles" . }}
 </head>
 <body>
@@ -10,12 +10,13 @@
   <main>
     <a href="/" class="back">← back to portal</a>
     <div class="card">
-      <h2>Add a user to a space role</h2>
+      <h2>Remove a user from a space role</h2>
       <p class="muted">
         You must already hold OrgManager on the target org.
         The change is captured as a GitLab MR for platform-team review.
+        Tip: click a name below to fill in the user, role, and origin.
       </p>
-      <form method="post" action="/actions/add-user-to-role" style="margin-top: 16px;">
+      <form method="post" action="/actions/remove-user-from-role" style="margin-top: 16px;">
         <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
         <label>Org
           <select name="org" id="org" required autofocus>
@@ -47,7 +48,7 @@
       </form>
       <div class="users-panel">
         <h3>Current users in this space</h3>
-        <div id="space-users" class="muted">Select an org and space to see who's already assigned.</div>
+        <div id="space-users" class="muted">Select an org and space to see who's assigned.</div>
       </div>
     </div>
   </main>

@@ -1,0 +1,93 @@
+{{ define "pickers" }}
+<script>
+(function () {
+  var orgSel = document.getElementById('org');
+  var spaceSel = document.getElementById('space');
+  var panel = document.getElementById('space-users');
+  if (!orgSel || !spaceSel) return;
+
+  var roleSel = document.querySelector('select[name="role"]');
+  var originSel = document.querySelector('select[name="origin"]');
+  var targetInput = document.querySelector('input[name="target_user"]');
+
+  function getJSON(url) {
+    return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function setOptions(sel, items, placeholder) {
+    sel.innerHTML = '';
+    var p = document.createElement('option');
+    p.value = ''; p.textContent = placeholder;
+    sel.appendChild(p);
+    (items || []).forEach(function (i) {
+      var o = document.createElement('option');
+      o.value = i; o.textContent = i;
+      sel.appendChild(o);
+    });
+  }
+
+  getJSON('/api/orgs')
+    .then(function (d) { setOptions(orgSel, d.orgs, '— select org —'); })
+    .catch(function () { orgSel.innerHTML = '<option value="">(could not load orgs)</option>'; });
+
+  orgSel.addEventListener('change', function () {
+    spaceSel.innerHTML = ''; spaceSel.disabled = true;
+    if (panel) panel.innerHTML = '';
+    if (!orgSel.value) return;
+    getJSON('/api/spaces?org=' + encodeURIComponent(orgSel.value))
+      .then(function (d) { setOptions(spaceSel, d.spaces, '— select space —'); spaceSel.disabled = false; })
+      .catch(function () { spaceSel.innerHTML = '<option value="">(could not load spaces)</option>'; });
+  });
+
+  spaceSel.addEventListener('change', function () {
+    if (!panel) return;
+    panel.innerHTML = '';
+    if (!orgSel.value || !spaceSel.value) return;
+    panel.textContent = 'Loading users…';
+    getJSON('/api/space-users?org=' + encodeURIComponent(orgSel.value) + '&space=' + encodeURIComponent(spaceSel.value))
+      .then(function (d) { renderUsers(d.roles); })
+      .catch(function () { panel.textContent = '(could not load users)'; });
+  });
+
+  function renderUsers(roles) {
+    panel.innerHTML = '';
+    var any = false;
+    (roles || []).forEach(function (r) {
+      [['ldap', r.ldap], ['saml', r.saml], ['internal', r.internal]].forEach(function (g) {
+        var origin = g[0], users = g[1] || [];
+        if (!users.length) return;
+        any = true;
+        var line = document.createElement('div');
+        line.className = 'role-users';
+        var label = document.createElement('strong');
+        label.textContent = 'space-' + r.role + ' (' + origin + '): ';
+        line.appendChild(label);
+        users.forEach(function (u, idx) {
+          var el;
+          if (targetInput) {
+            el = document.createElement('a');
+            el.href = '#';
+            el.addEventListener('click', function (e) {
+              e.preventDefault();
+              targetInput.value = u;
+              if (roleSel) roleSel.value = r.role;
+              if (originSel) originSel.value = origin;
+            });
+          } else {
+            el = document.createElement('span');
+          }
+          el.textContent = u;
+          line.appendChild(el);
+          if (idx < users.length - 1) line.appendChild(document.createTextNode(', '));
+        });
+        panel.appendChild(line);
+      });
+    });
+    if (!any) panel.textContent = 'No users currently assigned in this space.';
+  }
+})();
+</script>
+{{ end }}

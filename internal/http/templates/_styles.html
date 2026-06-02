@@ -25,6 +25,8 @@
     gap: 12px;
   }
   header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand .logo { height: 34px; width: auto; display: block; border-radius: 3px; }
   .user-info { font-size: 14px; color: #cfd4d8; }
   .user-info a { color: white; text-decoration: underline; }
   .user-info code { background: rgba(255,255,255,0.15); }
@@ -49,6 +51,8 @@
   .actions li { padding: 6px 0; }
   .actions a { color: #237CB8; text-decoration: none; font-weight: 500; }
   .actions a:hover { text-decoration: underline; }
+  .action-icon { height: 18px; width: 18px; vertical-align: -4px; margin-right: 8px; }
+  .card h2 .title-icon { height: 24px; width: 24px; vertical-align: -6px; margin-right: 10px; }
   .muted { color: #666; font-size: 13px; }
   label { display: block; font-size: 13px; font-weight: 600; color: #344048; margin-top: 16px; }
   label:first-of-type { margin-top: 0; }
@@ -106,5 +110,36 @@
     padding: 18px 40px;
     font-size: 13px;
   }
+  .users-panel { margin-top: 24px; border-top: 1px solid #eee; padding-top: 16px; }
+  .users-panel h3 { color: #344048; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .role-users { margin: 6px 0; font-size: 13px; color: #333; }
+  .role-users a { color: #237CB8; text-decoration: none; cursor: pointer; }
+  .role-users a:hover { text-decoration: underline; }
+  .picker-row { display: flex; gap: 16px; margin-top: 16px; align-items: flex-end; }
+  .picker-row label { margin-top: 0; }
+  .shuttle { display: flex; gap: 16px; align-items: stretch; margin-top: 20px; }
+  .shuttle-col { flex: 1; display: flex; flex-direction: column; }
+  .shuttle-col h3 { color: #344048; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .shuttle-col select[multiple] { width: 100%; height: 240px; padding: 4px; }
+  .shuttle-btns { display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+  .shuttle-btns button {
+    font: inherit; font-size: 13px; padding: 8px 12px; white-space: nowrap;
+    background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;
+  }
+  .shuttle-btns button:hover { border-color: #237CB8; color: #237CB8; }
+  .add-user { margin-top: 20px; border: 1px solid #eee; border-radius: 6px; padding: 14px; background: #fafafa; }
+  .add-user h3 { color: #344048; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .add-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .add-row input[type=text] { flex: 1; min-width: 200px; margin-top: 0; }
+  .add-row select { width: auto; margin-top: 0; }
+  .add-row button {
+    font: inherit; font-size: 13px; padding: 8px 14px; white-space: nowrap;
+    background: #fff; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;
+  }
+  .add-row button:hover { border-color: #237CB8; color: #237CB8; }
+  .roles-panel { margin-top: 20px; border: 1px solid #eee; border-radius: 6px; padding: 14px; background: #fafafa; }
+  .roles-panel h3 { color: #344048; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .role-checks { display: flex; flex-wrap: wrap; gap: 16px; }
+  .role-checks .checkbox { margin-top: 0; }
 </style>
 {{- end -}}

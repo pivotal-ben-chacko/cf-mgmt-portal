@@ -10,24 +10,31 @@ applications:
   env:
     GOPACKAGENAME: github.com/example/cf-mgmt-portal
     GO_INSTALL_PACKAGE_SPEC: ./cmd/portal
-    # Set the rest via `cf set-env` or a user-provided service.
-    #
-    # General:
-    #   PORTAL_URL                  https://portal.<system-domain>
-    #   SESSION_KEY                 <32+ random chars; rotate to invalidate sessions>
-    #   FOUNDATION                  fog
-    #   TARGET_BRANCH               development     (optional; default "development")
-    #
-    # GitLab (user login via OAuth + repo writes via PAT):
-    #   GITLAB_URL                  https://gitlab.<host>
-    #   GITLAB_OAUTH_CLIENT_ID      <from GitLab OAuth app>
-    #   GITLAB_OAUTH_CLIENT_SECRET  <same>
-    #   GITLAB_TOKEN                <project access token, api scope>
-    #   CONFIG_REPO_PROJECT         Global/ofs-lowers/fog-cf-mgmt   (human path; client URL-encodes)
-    #   PLATFORM_TEAM_GROUP         platform-cf-admins
-    #
-    # CF foundation (UAA service-account for authorization checks):
-    #   CF_API_URL                  https://api.<system-domain>
-    #   UAA_URL                     https://uaa.<system-domain>
-    #   UAA_CLIENT_ID               cf-mgmt-portal
-    #   UAA_CLIENT_SECRET           <secret>
+
+    # WARNING: this file is git-tracked. The secrets below (SESSION_KEY,
+    # GITLAB_TOKEN, GITLAB_OAUTH_CLIENT_SECRET, UAA_CLIENT_SECRET) are fine for
+    # a throwaway dev foundation but should move to `cf set-env` / a credential
+    # service before this is anything but local testing.
+
+    # General
+    PORTAL_URL: https://cf-mgmt-portal.apps.skynetsystems.io   # confirm apps domain via `cf domains`; must match OAuth redirect
+    SESSION_KEY: Ut4qLzCcoKjpjLjOvL9dHGa77E3ehqOx7ekOQi8-KPEygAA_
+    FOUNDATION: fog
+    TARGET_BRANCH: development
+
+    # GitLab (user login via OAuth + repo writes via PAT)
+    GITLAB_URL: http://gitlab.skynetsystems.io:8929        # reachable from CF (DNS -> 192.168.1.160); no TLS needed
+    GITLAB_OAUTH_CLIENT_ID: 8887507ba9796e06d108206c699eb89c3078ae8c10aaf823cce044f84ba64888
+    GITLAB_OAUTH_CLIENT_SECRET: gloas-dd1eac65a50f6bd2bf7a085125e08e2d8aa6f828400e595d1b282b2ec380cbef
+    GITLAB_TOKEN: glpat-hoFyZMapLN2ICCwKA2OxI286MQp1OjEH.01.0w09g7a21
+    CONFIG_REPO_PROJECT: Global/ofs-lowers/fog-cf-mgmt
+    PLATFORM_TEAM_GROUP: platform-cf-admins
+
+    # CF foundation (UAA service-account for authorization checks).
+    # Only used by the add-user / create-space ACTIONS, not by login.
+    # Dedicated read-only client_credentials client (authorities:
+    # cloud_controller.admin_read_only). See docs/cf-uaa-setup.md.
+    CF_API_URL: https://api.system.skynetsystems.io
+    UAA_URL: https://uaa.system.skynetsystems.io
+    UAA_CLIENT_ID: cf-mgmt-portal
+    UAA_CLIENT_SECRET: FyxsABQ9PNf-qFgA2-aiQ56uLDHw7wp8

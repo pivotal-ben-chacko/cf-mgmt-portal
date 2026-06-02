@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Create space · cf-mgmt portal</title>
+  <title>Create space · CF Management Portal</title>
   {{ template "styles" . }}
 </head>
 <body>
@@ -10,14 +10,18 @@
   <main>
     <a href="/" class="back">← back to portal</a>
     <div class="card">
-      <h2>Create a new space</h2>
+      <h2><img src="/assets/space.png" class="title-icon" alt="">Create a new space</h2>
       <p class="muted">
         You must already hold OrgManager on the target org.
         The new space inherits defaults from <code>spaceDefaults.yml</code>.
       </p>
       <form method="post" action="/actions/create-space" style="margin-top: 16px;">
         <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
-        <label>Org name (must already exist)<input name="org" required autofocus></label>
+        <label>Org
+          <select name="org" id="org" required autofocus>
+            <option value="">— loading orgs… —</option>
+          </select>
+        </label>
         <label>New space name<input name="space" required></label>
         <div class="checkbox">
           <input type="checkbox" id="add-self" name="add_self_as_manager" value="yes" checked>
@@ -28,5 +32,27 @@
     </div>
   </main>
   {{ template "footer" . }}
+  <script>
+  (function () {
+    var orgSel = document.getElementById('org');
+    if (!orgSel) return;
+    fetch('/api/orgs', { headers: { 'Accept': 'application/json' } })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        orgSel.innerHTML = '';
+        var p = document.createElement('option');
+        p.value = ''; p.textContent = '— select org —';
+        orgSel.appendChild(p);
+        (d.orgs || []).forEach(function (o) {
+          var opt = document.createElement('option');
+          opt.value = o; opt.textContent = o;
+          orgSel.appendChild(opt);
+        });
+      })
+      .catch(function () {
+        orgSel.innerHTML = '<option value="">(could not load orgs)</option>';
+      });
+  })();
+  </script>
 </body>
 </html>

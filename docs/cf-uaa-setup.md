@@ -169,6 +169,101 @@ Even with valid creds, the authz check (and the action) only succeeds when:
    CF/UAA as an LDAP user) won't be found, and the check fails as "not a
    manager."
 
+## Provisioning a user so an action succeeds (test / non-LDAP-synced foundations)
+
+If your GitLab isn't LDAP-synced to the foundation (e.g. a local Docker GitLab),
+no GitLab login will map to a CF `ldap` OrgManager, so every action fails the
+authz check. To make an action work end-to-end you must hand-create a CF `ldap`
+user whose **username equals the GitLab username you log in with**, give it
+OrgManager on an org, and make sure that org/space exists in the config repo.
+
+> **Write scope needed.** The portal's `cf-mgmt-portal` client is
+> **read-only** (`cloud_controller.admin_read_only`) and cannot do any of the
+> writes below. Use a token with `scim.write` (to create the user) **and**
+> `cloud_controller.admin` (to assign the role). The admin **user** token has
+> both — get it via the password grant on the `cf` client:
+>
+> ```bash
+> UAA=https://uaa.system.skynetsystems.io
+> AT=$(curl -sk -X POST "$UAA/oauth/token" -d grant_type=password \
+>   -d client_id=cf -d client_secret= -d username=admin \
+>   --data-urlencode "password=<ADMIN_USER_PASSWORD>" \
+>   | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+> ```
+
+Set the targets (must match what you'll type in the portal — names are
+**case-sensitive**, e.g. `system`, not `System`):
+
+```bash
+CFAPI=https://api.system.skynetsystems.io
+LOGIN_USER=root          # the GitLab username you sign in as
+ORG=system               # an existing CF org
+SPACE=dev
+```
+
+### 1. Create the UAA `ldap` user
+
+CAPI will **not** shadow-create an `ldap` user from a username (it returns
+`No user exists with the username '…' and origin 'ldap'`), so create it in UAA
+first via SCIM:
+
+```bash
+UG=$(curl -sk -X POST "$UAA/Users" -H "Authorization: Bearer $AT" \
+  -H 'Content-Type: application/json' -d "{
+    \"userName\":\"$LOGIN_USER\",\"origin\":\"ldap\",\"active\":true,\"verified\":true,
+    \"emails\":[{\"value\":\"$LOGIN_USER@example.local\",\"primary\":true}],
+    \"name\":{\"givenName\":\"$LOGIN_USER\",\"familyName\":\"$LOGIN_USER\"}}" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('id',''))")
+echo "uaa user guid: $UG"
+```
+
+(If it already exists, look it up:
+`curl -sk -G "$UAA/Users" -H "Authorization: Bearer $AT" --data-urlencode 'filter=userName eq "root" and origin eq "ldap"'`.)
+
+### 2. Assign OrgManager on the org (by GUID)
+
+```bash
+OG=$(curl -sk -H "Authorization: Bearer $AT" "$CFAPI/v3/organizations?names=$ORG" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['resources'][0]['guid'])")
+
+curl -sk -X POST "$CFAPI/v3/roles" -H "Authorization: Bearer $AT" \
+  -H 'Content-Type: application/json' -d "{
+    \"type\":\"organization_manager\",
+    \"relationships\":{\"user\":{\"data\":{\"guid\":\"$UG\"}},
+                       \"organization\":{\"data\":{\"guid\":\"$OG\"}}}}"
+```
+
+### 3. Seed the org/space in the config repo
+
+The action reads `fog/<org>/<space>/spaceConfig.yml`. Commit it on the
+`TARGET_BRANCH` (`development`) — see the seed example in
+[gitlab-setup.md](gitlab-setup.md#2-config-repo-project--config_repo_project).
+Minimum for `add user to role`: `fog/system/dev/spaceConfig.yml` (and
+`fog/system/spaces.yml` for `create space`).
+
+### 4. Verify with the portal's own (read-only) client
+
+Confirm the exact lookups the portal runs now succeed:
+
+```bash
+NT=$(curl -sk -X POST "$UAA/oauth/token" -d grant_type=client_credentials \
+  -d client_id=cf-mgmt-portal --data-urlencode "client_secret=<PORTAL_CLIENT_SECRET>" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+PUG=$(curl -sk -H "Authorization: Bearer $NT" "$CFAPI/v3/users?usernames=$LOGIN_USER&origins=ldap" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['resources'][0]['guid'])")
+curl -sk -H "Authorization: Bearer $NT" \
+  "$CFAPI/v3/roles?organization_guids=$OG&user_guids=$PUG&types=organization_manager" \
+  | python3 -c "import sys,json;print('PASS' if json.load(sys.stdin)['resources'] else 'FAIL')"
+```
+
+`PASS` means the next portal action for that user on `$ORG/$SPACE` will clear
+the authz check and open an MR.
+
+> **Note on identity matching.** The authz check is on the **logged-in** user,
+> not the *target* user of the action. The target user is only written into the
+> YAML and is never validated, so it can be any value. Only the GitLab user you
+> sign in as needs the CF `ldap` + OrgManager setup above.
+
 ## Just testing the login flow?
 
 Login never calls UAA/CF — only the *actions* do. To boot the app and watch the

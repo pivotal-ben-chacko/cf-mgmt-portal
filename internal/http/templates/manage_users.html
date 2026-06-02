@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Manage space users · CF Management Portal</title>
+  {{ template "styles" . }}
+</head>
+<body>
+  {{ template "header" . }}
+  <main>
+    <a href="/" class="back">← back to portal</a>
+    <div class="card">
+      <h2><img src="/assets/user.png" class="title-icon" alt="">Manage space users</h2>
+      <p class="muted">
+        You must already hold OrgManager on the target org. Pick an org and space,
+        then stage changes: add a new user, move a user to the right to remove them
+        from the space entirely, or click a user on the left to toggle their
+        individual roles. All staged changes are captured in a single GitLab MR for review.
+      </p>
+
+      <div class="picker-row">
+        <label style="flex:1; margin-top:0;">Org
+          <select id="org" required autofocus><option value="">— loading orgs… —</option></select>
+        </label>
+        <label style="flex:1; margin-top:0;">Space
+          <select id="space" required disabled><option value="">— select an org first —</option></select>
+        </label>
+      </div>
+
+      <div id="shuttle" class="shuttle" style="display:none;">
+        <div class="shuttle-col">
+          <h3>In this space</h3>
+          <select id="left" multiple size="12"></select>
+        </div>
+        <div class="shuttle-btns">
+          <button type="button" id="toRemove" title="Stage full removal">Remove →</button>
+          <button type="button" id="toKeep" title="Keep in space">← Keep</button>
+        </div>
+        <div class="shuttle-col">
+          <h3>To remove (all roles)</h3>
+          <select id="right" multiple size="12"></select>
+        </div>
+      </div>
+
+      <div id="adduser" class="add-user" style="display:none;">
+        <h3>Add a user to this space</h3>
+        <div class="add-row">
+          <input type="text" id="new-user" placeholder="LDAP id, e.g. F920U2K" autocomplete="off">
+          <select id="new-origin">
+            <option value="ldap" selected>ldap</option>
+            <option value="saml">saml</option>
+            <option value="internal">internal (UAA)</option>
+          </select>
+          <button type="button" id="add-user-btn">Add →</button>
+        </div>
+        <div id="add-hint" class="muted" style="margin-top:6px;"></div>
+      </div>
+
+      <div id="roles" class="roles-panel" style="display:none;">
+        <h3>Roles for <span id="roles-user"></span></h3>
+        <div class="role-checks">
+          <label class="checkbox"><input type="checkbox" data-role="developer"> space-developer</label>
+          <label class="checkbox"><input type="checkbox" data-role="manager"> space-manager</label>
+          <label class="checkbox"><input type="checkbox" data-role="auditor"> space-auditor</label>
+          <label class="checkbox"><input type="checkbox" data-role="supporter"> space-supporter</label>
+        </div>
+      </div>
+
+      <div id="pending" class="muted" style="margin-top:16px;"></div>
+
+      <form id="manage-form" method="post" action="/actions/manage-users" style="margin-top:16px; display:none;">
+        <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+        <input type="hidden" name="org" id="org-field">
+        <input type="hidden" name="space" id="space-field">
+        <input type="hidden" name="ops" id="ops-field">
+        <button type="submit" class="primary" id="submit-btn" disabled>Open MR with staged changes</button>
+      </form>
+    </div>
+  </main>
+  {{ template "footer" . }}
+  <script>
+  (function () {
+    var ROLES = ['developer', 'manager', 'auditor', 'supporter'];
+    var orgSel = document.getElementById('org');
+    var spaceSel = document.getElementById('space');
+    var shuttle = document.getElementById('shuttle');
+    var left = document.getElementById('left');
+    var right = document.getElementById('right');
+    var rolesPanel = document.getElementById('roles');
+    var rolesUser = document.getElementById('roles-user');
+    var pending = document.getElementById('pending');
+    var form = document.getElementById('manage-form');
+    var submitBtn = document.getElementById('submit-btn');
+    var roleChecks = rolesPanel.querySelectorAll('input[type=checkbox]');
+    var addBlock = document.getElementById('adduser');
+    var newUserInput = document.getElementById('new-user');
+    var newOriginSel = document.getElementById('new-origin');
+    var addHint = document.getElementById('add-hint');
+
+    // original[user] = {origin, roles:Set}  — as loaded (new users start with empty roles)
+    // state[user]    = {origin, roles:Set}  — edited (for users kept in space)
+    var original = {}, state = {}, newUsers = new Set();
+
+    function getJSON(url) {
+      return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      });
+    }
+    function setOptions(sel, items, placeholder) {
+      sel.innerHTML = '';
+      var p = document.createElement('option');
+      p.value = ''; p.textContent = placeholder; sel.appendChild(p);
+      (items || []).forEach(function (i) {
+        var o = document.createElement('option'); o.value = i; o.textContent = i; sel.appendChild(o);
+      });
+    }
+    function cloneState(src) {
+      var out = {};
+      Object.keys(src).forEach(function (u) {
+        out[u] = { origin: src[u].origin, roles: new Set(src[u].roles) };
+      });
+      return out;
+    }
+
+    getJSON('/api/orgs')
+      .then(function (d) { setOptions(orgSel, d.orgs, '— select org —'); })
+      .catch(function () { orgSel.innerHTML = '<option value="">(could not load orgs)</option>'; });
+
+    orgSel.addEventListener('change', function () {
+      spaceSel.innerHTML = ''; spaceSel.disabled = true;
+      hideEditor();
+      if (!orgSel.value) return;
+      getJSON('/api/spaces?org=' + encodeURIComponent(orgSel.value))
+        .then(function (d) { setOptions(spaceSel, d.spaces, '— select space —'); spaceSel.disabled = false; })
+        .catch(function () { spaceSel.innerHTML = '<option value="">(could not load spaces)</option>'; });
+    });
+
+    spaceSel.addEventListener('change', function () {
+      hideEditor();
+      if (!orgSel.value || !spaceSel.value) return;
+      getJSON('/api/space-users?org=' + encodeURIComponent(orgSel.value) + '&space=' + encodeURIComponent(spaceSel.value))
+        .then(loadUsers)
+        .catch(function () { pending.textContent = '(could not load users)'; });
+    });
+
+    function hideEditor() {
+      shuttle.style.display = 'none';
+      addBlock.style.display = 'none';
+      rolesPanel.style.display = 'none';
+      form.style.display = 'none';
+      pending.textContent = '';
+      addHint.textContent = ''; newUserInput.value = '';
+      original = {}; state = {}; newUsers = new Set();
+    }
+
+    function loadUsers(d) {
+      original = {};
+      (d.roles || []).forEach(function (r) {
+        [['ldap', r.ldap], ['saml', r.saml], ['internal', r.internal]].forEach(function (g) {
+          var origin = g[0];
+          (g[1] || []).forEach(function (u) {
+            if (!original[u]) original[u] = { origin: origin, roles: new Set() };
+            original[u].roles.add(r.role);
+          });
+        });
+      });
+      state = cloneState(original);
+      newUsers = new Set();
+
+      left.innerHTML = ''; right.innerHTML = '';
+      Object.keys(original).sort().forEach(function (u) {
+        var o = document.createElement('option'); o.value = u; o.textContent = u; left.appendChild(o);
+      });
+
+      shuttle.style.display = 'flex';
+      addBlock.style.display = 'block';
+      form.style.display = 'block';
+      rolesPanel.style.display = 'none';
+      addHint.textContent = ''; newUserInput.value = '';
+      recompute();
+    }
+
+    function addNewUser() {
+      var u = newUserInput.value.trim();
+      if (!u) return;
+      if (original[u] || state[u]) { addHint.textContent = '“' + u + '” is already listed.'; return; }
+      var origin = newOriginSel.value;
+      original[u] = { origin: origin, roles: new Set() };
+      state[u] = { origin: origin, roles: new Set() };
+      newUsers.add(u);
+      var o = document.createElement('option');
+      o.value = u; o.textContent = u + ' (new)';
+      left.appendChild(o);
+      newUserInput.value = '';
+      addHint.textContent = 'Added “' + u + '” (' + origin + '). Now tick the role(s) to assign below.';
+      // Select the new user so its role checkboxes appear for immediate role selection.
+      Array.prototype.slice.call(left.options).forEach(function (opt) { opt.selected = (opt.value === u); });
+      left.dispatchEvent(new Event('change'));
+      recompute();
+    }
+    document.getElementById('add-user-btn').addEventListener('click', addNewUser);
+    newUserInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addNewUser(); }
+    });
+
+    function moveSelected(from, to) {
+      Array.prototype.slice.call(from.selectedOptions).forEach(function (o) { to.appendChild(o); o.selected = false; });
+      rolesPanel.style.display = 'none';
+      recompute();
+    }
+    document.getElementById('toRemove').addEventListener('click', function () { moveSelected(left, right); });
+    document.getElementById('toKeep').addEventListener('click', function () { moveSelected(right, left); });
+
+    left.addEventListener('change', function () {
+      if (left.selectedOptions.length !== 1) { rolesPanel.style.display = 'none'; return; }
+      var u = left.selectedOptions[0].value;
+      rolesUser.textContent = u;
+      roleChecks.forEach(function (c) { c.checked = state[u] && state[u].roles.has(c.dataset.role); });
+      rolesPanel.style.display = 'block';
+    });
+
+    roleChecks.forEach(function (c) {
+      c.addEventListener('change', function () {
+        if (left.selectedOptions.length !== 1) return;
+        var u = left.selectedOptions[0].value;
+        if (!state[u]) return;
+        if (c.checked) state[u].roles.add(c.dataset.role); else state[u].roles.delete(c.dataset.role);
+        recompute();
+      });
+    });
+
+    function computeOps() {
+      var ops = [];
+      // Users staged for full removal (in the right box): remove every original role.
+      Array.prototype.slice.call(right.options).forEach(function (o) {
+        var u = o.value, orig = original[u];
+        if (!orig) return;
+        orig.roles.forEach(function (role) {
+          ops.push({ user: u, origin: orig.origin, role: role, action: 'remove' });
+        });
+      });
+      // Users kept in the space (left box): diff edited roles against original.
+      Array.prototype.slice.call(left.options).forEach(function (o) {
+        var u = o.value, orig = original[u], cur = state[u];
+        if (!orig || !cur) return;
+        ROLES.forEach(function (role) {
+          var was = orig.roles.has(role), now = cur.roles.has(role);
+          if (now && !was) ops.push({ user: u, origin: cur.origin, role: role, action: 'add' });
+          else if (!now && was) ops.push({ user: u, origin: cur.origin, role: role, action: 'remove' });
+        });
+      });
+      return ops;
+    }
+
+    function recompute() {
+      var ops = computeOps();
+      submitBtn.disabled = ops.length === 0;
+      if (!ops.length) { pending.textContent = 'No changes staged yet.'; return; }
+      pending.innerHTML = '<strong>' + ops.length + ' staged change(s):</strong> ' +
+        ops.map(function (op) {
+          return (op.action === 'remove' ? '−' : '+') + op.user + ' ' + op.role;
+        }).join(', ');
+    }
+
+    form.addEventListener('submit', function (e) {
+      var ops = computeOps();
+      if (!ops.length) { e.preventDefault(); return; }
+      document.getElementById('org-field').value = orgSel.value;
+      document.getElementById('space-field').value = spaceSel.value;
+      document.getElementById('ops-field').value = JSON.stringify(ops);
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ if .Success }}Done{{ else }}Failed{{ end }} · cf-mgmt portal</title>
+  <title>{{ if .Success }}Done{{ else }}Failed{{ end }} · CF Management Portal</title>
   {{ template "styles" . }}
   <style>
     .terminal {
@@ -34,6 +34,34 @@
     .terminal .mr { margin-top: 10px; word-break: break-all; white-space: normal; }
     .terminal .mr a { color: #6fa8dc; text-decoration: none; }
     .terminal .mr a:hover { text-decoration: underline; }
+
+    /* --- step reveal animation (progressive enhancement) --- */
+    .terminal .run { display: none; color: #8a8f96; }
+    .terminal .spinner {
+      display: inline-block; width: 9px; height: 9px;
+      border: 2px solid #4a5158; border-top-color: #6fa8dc; border-radius: 50%;
+      vertical-align: -1px; margin-right: 7px; animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadein { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+    /* When JS turns animation on, hide rows/summary until revealed one by one. */
+    body.anim .terminal .row { display: none; }
+    body.anim .terminal .row.revealed { display: flex; animation: fadein 0.18s ease-out; }
+    body.anim .terminal .row.running .run { display: inline; }
+    body.anim .terminal .row.running .final { display: none; }
+    /* Neutralize the title arrow while a step is still running. */
+    body.anim .terminal .row.running .title .ok,
+    body.anim .terminal .row.running .title .err,
+    body.anim .terminal .row.running .title .skip { color: #8a8f96; }
+    body.anim .terminal .summary, body.anim .terminal .mr { display: none; }
+    body.anim .terminal .summary.revealed { display: block; animation: fadein 0.22s ease-out; }
+    body.anim .terminal .mr.revealed { display: block; animation: fadein 0.22s ease-out; }
+    .terminal .cursor {
+      display: none; width: 7px; height: 14px; background: #6fa8dc;
+      vertical-align: -2px; margin-left: 4px; animation: blink 1s step-start infinite;
+    }
+    body.anim .terminal .cursor.on { display: inline-block; }
+    @keyframes blink { 50% { opacity: 0; } }
   </style>
 </head>
 <body>
@@ -44,10 +72,10 @@
       <h2>{{ if .Success }}Done{{ else }}Failed{{ end }}</h2>
       {{ if .Headline }}<p>{{ .Headline }}</p>{{ end }}
       <div class="terminal">
-        <div><span class="prompt">$</span> portal: {{ .Action }}</div>
+        <div><span class="prompt">$</span> portal: {{ .Action }}<span class="cursor"></span></div>
         <div>&nbsp;</div>
         {{ range .Steps }}
-        <div class="row">
+        <div class="row" data-status="{{ .Status }}" data-ms="{{ .DurationMS }}">
           <span class="title">
             {{- if eq .Status "ok" }}<span class="ok">→</span>
             {{- else if eq .Status "error" }}<span class="err">→</span>
@@ -55,10 +83,13 @@
             {{ .Title }}
           </span>
           <span class="meta">
-            {{- if eq .Status "ok" }}<span class="ok">✓ {{ .DurationLabel }}</span>
-            {{- else if eq .Status "error" }}<span class="err">✗ {{ .DurationLabel }}</span>
-            {{- else }}<span class="skip">○ skipped</span>{{ end }}
-            {{ if .Detail }}<span class="detail"> · {{ .Detail }}</span>{{ end }}
+            <span class="run"><span class="spinner"></span>running…</span>
+            <span class="final">
+              {{- if eq .Status "ok" }}<span class="ok">✓ {{ .DurationLabel }}</span>
+              {{- else if eq .Status "error" }}<span class="err">✗ {{ .DurationLabel }}</span>
+              {{- else }}<span class="skip">○ skipped</span>{{ end }}
+              {{ if .Detail }}<span class="detail"> · {{ .Detail }}</span>{{ end }}
+            </span>
           </span>
         </div>
         {{ end }}
@@ -68,6 +99,41 @@
         </div>
         {{ if .MRURL }}<div class="mr">MR: <a href="{{ .MRURL }}">{{ .MRURL }}</a></div>{{ end }}
       </div>
+      <script>
+      (function () {
+        var term = document.querySelector('.terminal');
+        if (!term || !window.requestAnimationFrame) return;       // no-JS / old browser: full list shows as-is
+        document.body.classList.add('anim');
+        var rows = [].slice.call(term.querySelectorAll('.row'));
+        var summary = term.querySelector('.summary');
+        var mr = term.querySelector('.mr');
+        var cursor = term.querySelector('.cursor');
+        if (cursor) cursor.classList.add('on');
+        // Pace each step by its real duration, clamped so it's watchable.
+        function pace(ms) { ms = ms || 0; return Math.min(Math.max(ms, 300), 1200); }
+        var i = 0;
+        function next() {
+          if (i >= rows.length) {
+            if (cursor) cursor.classList.remove('on');
+            if (summary) summary.classList.add('revealed');
+            if (mr) mr.classList.add('revealed');
+            return;
+          }
+          var row = rows[i];
+          row.classList.add('revealed');
+          if (row.getAttribute('data-status') === 'skip') {   // skipped: no spinner, brief beat
+            i++; setTimeout(next, 250); return;
+          }
+          row.classList.add('running');
+          setTimeout(function () {
+            row.classList.remove('running');
+            i++;
+            setTimeout(next, 120);
+          }, pace(parseInt(row.getAttribute('data-ms'), 10)));
+        }
+        next();
+      })();
+      </script>
     </div>
   </main>
   {{ template "footer" . }}

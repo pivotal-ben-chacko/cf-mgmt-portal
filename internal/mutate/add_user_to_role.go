@@ -25,30 +25,23 @@ const (
 )
 
 // AddUserToSpaceRole reads a spaceConfig.yml, appends username to the user list
-// for the given role+origin (deduped), and returns the new YAML bytes. The
-// input bytes are not modified. If the user is already present, the original
-// bytes are returned unchanged.
+// for the given role+origin (deduped), and returns the new YAML bytes. The edit
+// is done at the node level so the diff contains only the added line (see
+// nodeedit.go). The input bytes are not modified. If the user is already
+// present, the original bytes are returned unchanged.
 func AddUserToSpaceRole(current []byte, role Role, origin Origin, username string) ([]byte, error) {
-	var cfg config.SpaceConfig
-	if err := yaml.Unmarshal(current, &cfg); err != nil {
+	var doc yaml.MapSlice
+	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
-
-	mgmt, err := roleField(&cfg, role)
+	doc, changed, err := applyUserEdit(doc, role, origin, username, "add")
 	if err != nil {
 		return nil, err
 	}
-	list, err := originField(mgmt, origin)
-	if err != nil {
-		return nil, err
-	}
-
-	if contains(*list, username) {
+	if !changed {
 		return current, nil
 	}
-	*list = append(*list, username)
-
-	return yaml.Marshal(&cfg)
+	return yaml.Marshal(doc)
 }
 
 func roleField(s *config.SpaceConfig, role Role) (*config.UserMgmt, error) {
@@ -75,13 +68,4 @@ func originField(u *config.UserMgmt, origin Origin) (*[]string, error) {
 		return &u.Users, nil
 	}
 	return nil, fmt.Errorf("unknown origin: %q", origin)
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
