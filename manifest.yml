@@ -11,20 +11,20 @@ applications:
     GOPACKAGENAME: github.com/example/cf-mgmt-portal
     GO_INSTALL_PACKAGE_SPEC: ./cmd/portal
 
-    # WARNING: this file is git-tracked. The secrets below (SESSION_KEY,
-    # GITLAB_TOKEN, UAA_CLIENT_SECRET, UAA_LOGIN_CLIENT_SECRET) are fine for
-    # a throwaway dev foundation but should move to `cf set-env` / a credential
-    # service before this is anything but local testing.
+    # This file is git-tracked, so every secret is a CHANGE-ME placeholder.
+    # Set the real values out-of-band and restage:
+    #   cf set-env cf-mgmt-portal <VAR> <value> && cf restage cf-mgmt-portal
+    # How to mint each one: docs/gitlab-setup.md, docs/cf-uaa-setup.md.
 
     # General
     PORTAL_URL: https://cf-mgmt-portal.apps.skynetsystems.io   # confirm apps domain via `cf domains`; must match OAuth redirect
-    SESSION_KEY: Ut4qLzCcoKjpjLjOvL9dHGa77E3ehqOx7ekOQi8-KPEygAA_
+    SESSION_KEY: CHANGE-ME  # >= 32 chars; generate with `openssl rand -base64 36`
     FOUNDATION: fog
     TARGET_BRANCH: development
 
     # GitLab (config-repo writes via PAT; no longer used for login)
     GITLAB_URL: http://gitlab.skynetsystems.io:8929        # reachable from CF (DNS -> 192.168.1.160); no TLS needed
-    GITLAB_TOKEN: glpat-hoFyZMapLN2ICCwKA2OxI286MQp1OjEH.01.0w09g7a21
+    GITLAB_TOKEN: CHANGE-ME  # PAT with `api` scope; see docs/gitlab-setup.md
     CONFIG_REPO_PROJECT: Global/ofs-lowers/fog-cf-mgmt
     PLATFORM_TEAM_GROUP: platform-cf-admins
 
@@ -37,6 +37,6 @@ applications:
     CF_API_URL: https://api.system.skynetsystems.io
     UAA_URL: https://uaa.system.skynetsystems.io
     UAA_CLIENT_ID: cf-mgmt-portal
-    UAA_CLIENT_SECRET: FyxsABQ9PNf-qFgA2-aiQ56uLDHw7wp8
+    UAA_CLIENT_SECRET: CHANGE-ME  # set at `uaac client add cf-mgmt-portal ...`
     UAA_LOGIN_CLIENT_ID: cf-mgmt-portal-login
     UAA_LOGIN_CLIENT_SECRET: CHANGE-ME  # set after `uaac client add cf-mgmt-portal-login ...`
