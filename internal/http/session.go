@@ -20,7 +20,6 @@ const (
 )
 
 type session struct {
-	GitLabID  int       `json:"gid"`
 	Username  string    `json:"u"`
 	Email     string    `json:"e"`
 	Expires   time.Time `json:"exp"`

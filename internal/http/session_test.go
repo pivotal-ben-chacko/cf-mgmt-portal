@@ -9,7 +9,6 @@ var testKey = []byte("0123456789abcdef0123456789abcdef")
 
 func TestSession_RoundTrip(t *testing.T) {
 	s := session{
-		GitLabID:  42,
 		Username:  "F920U2K",
 		Email:     "ben@example.com",
 		Expires:   time.Now().Add(time.Hour).UTC().Round(time.Second),
@@ -23,7 +22,7 @@ func TestSession_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Username != s.Username || got.GitLabID != s.GitLabID ||
+	if got.Username != s.Username ||
 		got.Email != s.Email || got.CSRFToken != s.CSRFToken {
 		t.Errorf("round-trip mismatch: %+v vs %+v", got, s)
 	}

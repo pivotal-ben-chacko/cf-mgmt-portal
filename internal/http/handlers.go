@@ -65,7 +65,6 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := session{
-		GitLabID:  user.GitLabID,
 		Username:  user.Username,
 		Email:     user.Email,
 		Expires:   time.Now().Add(sessionTTL),

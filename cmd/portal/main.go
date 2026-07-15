@@ -17,26 +17,28 @@ type config struct {
 	Foundation   string // subdirectory in the config repo, e.g. "fog"
 	TargetBranch string // optional, defaults to "development"
 
-	GitLabURL               string
-	GitLabOAuthClientID     string
-	GitLabOAuthClientSecret string
-	GitLabToken             string
-	ConfigRepoProject       string
-	PlatformTeamGroup       string
+	GitLabURL         string
+	GitLabToken       string
+	ConfigRepoProject string
+	PlatformTeamGroup string
 
-	CFAPIURL        string
-	UAAURL          string
+	CFAPIURL string
+	UAAURL   string
+	// Service-account client (client_credentials) for CF API authz checks.
 	UAAClientID     string
 	UAAClientSecret string
+	// Login client (authorization_code, scope openid) for user sign-in.
+	UAALoginClientID     string
+	UAALoginClientSecret string
 }
 
 func main() {
 	cfg := loadConfig()
 
-	authClient, err := auth.NewGitLabOAuth(
-		cfg.GitLabURL,
-		cfg.GitLabOAuthClientID,
-		cfg.GitLabOAuthClientSecret,
+	authClient, err := auth.NewUAAOAuth(
+		cfg.UAAURL,
+		cfg.UAALoginClientID,
+		cfg.UAALoginClientSecret,
 		cfg.PortalURL+"/auth/callback",
 	)
 	if err != nil {
@@ -71,16 +73,16 @@ func loadConfig() config {
 		SessionKey:              requireEnv("SESSION_KEY"),
 		Foundation:              requireEnv("FOUNDATION"),
 		TargetBranch:            os.Getenv("TARGET_BRANCH"),
-		GitLabURL:               requireEnv("GITLAB_URL"),
-		GitLabOAuthClientID:     requireEnv("GITLAB_OAUTH_CLIENT_ID"),
-		GitLabOAuthClientSecret: requireEnv("GITLAB_OAUTH_CLIENT_SECRET"),
-		GitLabToken:             requireEnv("GITLAB_TOKEN"),
-		ConfigRepoProject:       requireEnv("CONFIG_REPO_PROJECT"),
-		PlatformTeamGroup:       requireEnv("PLATFORM_TEAM_GROUP"),
-		CFAPIURL:                requireEnv("CF_API_URL"),
-		UAAURL:                  requireEnv("UAA_URL"),
-		UAAClientID:             requireEnv("UAA_CLIENT_ID"),
-		UAAClientSecret:         requireEnv("UAA_CLIENT_SECRET"),
+		GitLabURL:            requireEnv("GITLAB_URL"),
+		GitLabToken:          requireEnv("GITLAB_TOKEN"),
+		ConfigRepoProject:    requireEnv("CONFIG_REPO_PROJECT"),
+		PlatformTeamGroup:    requireEnv("PLATFORM_TEAM_GROUP"),
+		CFAPIURL:             requireEnv("CF_API_URL"),
+		UAAURL:               requireEnv("UAA_URL"),
+		UAAClientID:          requireEnv("UAA_CLIENT_ID"),
+		UAAClientSecret:      requireEnv("UAA_CLIENT_SECRET"),
+		UAALoginClientID:     requireEnv("UAA_LOGIN_CLIENT_ID"),
+		UAALoginClientSecret: requireEnv("UAA_LOGIN_CLIENT_SECRET"),
 	}
 	if len(c.SessionKey) < 32 {
 		log.Fatal("SESSION_KEY must be at least 32 characters")

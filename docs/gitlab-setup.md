@@ -4,11 +4,14 @@ How to create the GitLab objects the portal needs and retrieve the values that
 go into `manifest.yml` (the `GITLAB_*`, `CONFIG_REPO_PROJECT`, and
 `PLATFORM_TEAM_GROUP` env vars). Do this once per GitLab instance.
 
-The portal uses GitLab two ways:
+> **⚠️ Login moved to UAA.** The portal no longer uses GitLab for user login —
+> sign-in goes through the foundation's UAA (see
+> [cf-uaa-setup.md](cf-uaa-setup.md), "Create the login client"). The OAuth
+> application sections below are kept for history only; `GITLAB_OAUTH_*` env
+> vars are gone. GitLab's remaining job is **repo writes**.
 
-- **User login** — via an **OAuth application** (`GITLAB_OAUTH_CLIENT_ID` /
-  `_SECRET`). GitLab is the IdP; the GitLab username must equal the user's
-  LDAP `sAMAccountName` (e.g. `F920U2K`).
+The portal uses GitLab one way:
+
 - **Repo writes** — via a **personal/project access token** (`GITLAB_TOKEN`,
   `api` scope) used to read files, push branches, and open MRs against the
   config repo.
@@ -18,7 +21,6 @@ The portal uses GitLab two ways:
 | Object | Example value | Env var |
 |---|---|---|
 | Instance base URL | `http://gitlab.skynetsystems.io:8929` | `GITLAB_URL` |
-| OAuth application | `cf-mgmt-portal` | `GITLAB_OAUTH_CLIENT_ID` / `_SECRET` |
 | Access token (`api` scope) | `glpat-…` | `GITLAB_TOKEN` |
 | Config repo project | `Global/ofs-lowers/fog-cf-mgmt` | `CONFIG_REPO_PROJECT` |
 | Assignee group | `platform-cf-admins` | `PLATFORM_TEAM_GROUP` |

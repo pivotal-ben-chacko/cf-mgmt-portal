@@ -12,7 +12,7 @@ applications:
     GO_INSTALL_PACKAGE_SPEC: ./cmd/portal
 
     # WARNING: this file is git-tracked. The secrets below (SESSION_KEY,
-    # GITLAB_TOKEN, GITLAB_OAUTH_CLIENT_SECRET, UAA_CLIENT_SECRET) are fine for
+    # GITLAB_TOKEN, UAA_CLIENT_SECRET, UAA_LOGIN_CLIENT_SECRET) are fine for
     # a throwaway dev foundation but should move to `cf set-env` / a credential
     # service before this is anything but local testing.
 
@@ -22,19 +22,21 @@ applications:
     FOUNDATION: fog
     TARGET_BRANCH: development
 
-    # GitLab (user login via OAuth + repo writes via PAT)
+    # GitLab (config-repo writes via PAT; no longer used for login)
     GITLAB_URL: http://gitlab.skynetsystems.io:8929        # reachable from CF (DNS -> 192.168.1.160); no TLS needed
-    GITLAB_OAUTH_CLIENT_ID: 8887507ba9796e06d108206c699eb89c3078ae8c10aaf823cce044f84ba64888
-    GITLAB_OAUTH_CLIENT_SECRET: gloas-dd1eac65a50f6bd2bf7a085125e08e2d8aa6f828400e595d1b282b2ec380cbef
     GITLAB_TOKEN: glpat-hoFyZMapLN2ICCwKA2OxI286MQp1OjEH.01.0w09g7a21
     CONFIG_REPO_PROJECT: Global/ofs-lowers/fog-cf-mgmt
     PLATFORM_TEAM_GROUP: platform-cf-admins
 
-    # CF foundation (UAA service-account for authorization checks).
-    # Only used by the add-user / create-space ACTIONS, not by login.
-    # Dedicated read-only client_credentials client (authorities:
-    # cloud_controller.admin_read_only). See docs/cf-uaa-setup.md.
+    # CF foundation / UAA. Two separate UAA clients:
+    #  - UAA_CLIENT_*: read-only client_credentials service account for the
+    #    authz checks (authorities: cloud_controller.admin_read_only).
+    #  - UAA_LOGIN_CLIENT_*: authorization_code client (scope: openid,
+    #    autoapprove) for user sign-in; users authenticate on UAA's login page.
+    # Creation commands for both: docs/cf-uaa-setup.md.
     CF_API_URL: https://api.system.skynetsystems.io
     UAA_URL: https://uaa.system.skynetsystems.io
     UAA_CLIENT_ID: cf-mgmt-portal
     UAA_CLIENT_SECRET: FyxsABQ9PNf-qFgA2-aiQ56uLDHw7wp8
+    UAA_LOGIN_CLIENT_ID: cf-mgmt-portal-login
+    UAA_LOGIN_CLIENT_SECRET: CHANGE-ME  # set after `uaac client add cf-mgmt-portal-login ...`

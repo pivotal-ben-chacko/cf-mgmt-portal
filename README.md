@@ -14,8 +14,9 @@ pipeline runs.
 
 A mutating action flows through four stages (`internal/http/handlers.go`):
 
-1. **Authn** — user logs in with **GitLab OAuth** (GitLab is LDAP-synced, so the
-   GitLab username equals the `sAMAccountName` used in `spaceConfig.yml`).
+1. **Authn** — user logs in via **UAA OAuth** (UAA is LDAP-integrated, so the
+   `user_name` claim equals the `sAMAccountName` used in `spaceConfig.yml`;
+   credentials are entered on UAA's login page, never the portal's).
    Sessions are stateless, HMAC-signed cookies.
 2. **Authz** — before any write, the portal checks via the **CF API** (using a
    read-only UAA service account) that the user holds the required role

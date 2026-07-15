@@ -154,6 +154,46 @@ curl -sk -H "Authorization: Bearer $T" "$CFAPI/v3/organizations?per_page=5" \
 
 If that prints org names, the service account is good.
 
+## Create the login client (`UAA_LOGIN_CLIENT_*`)
+
+Since the switch away from GitLab OAuth, **user sign-in also goes through
+UAA**: the portal redirects the browser to UAA's login page
+(authorization-code flow, `openid` scope), and the `user_name` claim it gets
+back from `/userinfo` is the LDAP `sAMAccountName`. This needs a **second,
+separate client** — a login client has no CF API authorities at all, while the
+service account above must never hold a browser-facing grant.
+
+```bash
+# (uaac already targeted + admin token from Step 1 above)
+uaac client add cf-mgmt-portal-login \
+  --name "cf-mgmt-portal user login" \
+  --authorized_grant_types authorization_code,refresh_token \
+  --scope openid \
+  --autoapprove openid \
+  --redirect_uri "<PORTAL_URL>/auth/callback" \
+  --secret <CHOOSE_A_STRONG_SECRET>
+```
+
+Notes:
+
+- The `redirect_uri` must match `$PORTAL_URL/auth/callback` **exactly**,
+  scheme included. Add multiple `--redirect_uri` values if you also test on
+  localhost.
+- `--autoapprove openid` skips UAA's consent screen so login feels seamless.
+- This client uses **`scope`**, not `authorities` — the inverse of the
+  service-account rule above, because its tokens act *on behalf of the user*.
+- If the browser redirect to `/oauth/authorize` errors on your foundation,
+  point `UAA_URL` at the `login.system.<domain>` host instead of
+  `uaa.system.<domain>` — some deployments only serve the login UI there
+  (token and `/userinfo` work on both).
+
+Wire it in:
+
+```yaml
+UAA_LOGIN_CLIENT_ID: cf-mgmt-portal-login
+UAA_LOGIN_CLIENT_SECRET: <CHOOSE_A_STRONG_SECRET>
+```
+
 ## CF-side prerequisites for an action to pass
 
 Even with valid creds, the authz check (and the action) only succeeds when:
@@ -165,17 +205,26 @@ Even with valid creds, the authz check (and the action) only succeeds when:
 2. **The logged-in user is OrgManager on that org.** The check is specifically
    for `organization_manager`; auditors/developers are rejected.
 3. **The user exists in CF with origin `ldap`.** The lookup is
-   `usernames=<id>&origins=ldap`; a user only present in GitLab (not synced into
-   CF/UAA as an LDAP user) won't be found, and the check fails as "not a
-   manager."
+   `usernames=<id>&origins=ldap`; a user whose only UAA identity has a
+   different origin (e.g. a local `uaa`-origin test account) won't be found,
+   and the check fails as "not a manager."
 
 ## Provisioning a user so an action succeeds (test / non-LDAP-synced foundations)
 
-If your GitLab isn't LDAP-synced to the foundation (e.g. a local Docker GitLab),
-no GitLab login will map to a CF `ldap` OrgManager, so every action fails the
-authz check. To make an action work end-to-end you must hand-create a CF `ldap`
-user whose **username equals the GitLab username you log in with**, give it
-OrgManager on an org, and make sure that org/space exists in the config repo.
+If your foundation's UAA has no real LDAP integration (e.g. the local dev
+stack), the authz lookup (`origins=ldap`) can't find anyone, so every action
+fails. To make an action work end-to-end you must hand-create a CF `ldap`
+user whose **username equals the username you sign in to the portal with**,
+give it OrgManager on an org, and make sure that org/space exists in the
+config repo.
+
+> **Local-dev sign-in without LDAP.** UAA's login page can only authenticate
+> identities it can verify — and a hand-created `ldap`-origin user has no
+> password UAA can check without a real LDAP server behind it. The trick: the
+> authz lookup matches on the **username string**, not the session's origin.
+> So create **two** UAA users with the same `userName`: a normal `uaa`-origin
+> user with a password (this one you log in as) and the shadow `ldap`-origin
+> user below (this one satisfies the role check).
 
 > **Write scope needed.** The portal's `cf-mgmt-portal` client is
 > **read-only** (`cloud_controller.admin_read_only`) and cannot do any of the
@@ -196,7 +245,7 @@ Set the targets (must match what you'll type in the portal — names are
 
 ```bash
 CFAPI=https://api.system.skynetsystems.io
-LOGIN_USER=root          # the GitLab username you sign in as
+LOGIN_USER=root          # the username you sign in to the portal as (UAA login)
 ORG=system               # an existing CF org
 SPACE=dev
 ```
@@ -261,12 +310,13 @@ the authz check and open an MR.
 
 > **Note on identity matching.** The authz check is on the **logged-in** user,
 > not the *target* user of the action. The target user is only written into the
-> YAML and is never validated, so it can be any value. Only the GitLab user you
+> YAML and is never validated, so it can be any value. Only the user you
 > sign in as needs the CF `ldap` + OrgManager setup above.
 
 ## Just testing the login flow?
 
-Login never calls UAA/CF — only the *actions* do. To boot the app and watch the
-OAuth flow without a working service account, any non-empty `UAA_CLIENT_*`
-placeholder is enough for startup (the app requires the vars to be set, but
-won't use them until you submit an action).
+Login uses only the `UAA_LOGIN_CLIENT_*` client (authorize → token →
+`/userinfo`); the `UAA_CLIENT_*` service account is untouched until you submit
+an *action*. So to boot the app and watch the login flow, the login client
+must exist, but any non-empty `UAA_CLIENT_*` placeholder is enough for
+startup.

@@ -1,13 +1,19 @@
-// Package auth handles user authentication via GitLab OAuth.
+// Package auth handles user authentication via the foundation's UAA
+// (authorization-code OAuth with the `openid` scope).
 //
-// We use GitLab (not the foundation's UAA) as the identity provider because:
-//   - Users already have GitLab accounts to open MRs.
-//   - GitLab is LDAP-synced, so GitLab username == sAMAccountName (e.g. F920U2K)
-//     which matches the user identity used in spaceConfig.yml.
-//   - Single OAuth client, regardless of how many CF foundations we manage.
+// We use UAA (not GitLab) as the identity provider because:
+//   - UAA is LDAP-integrated, and for LDAP-origin users the `user_name` claim
+//     from /userinfo IS the sAMAccountName (e.g. F920U2K) — the exact identity
+//     used in spaceConfig.yml and by the CF role check. GitLab usernames turned
+//     out not to match sAMAccountName on the production instance.
+//   - Every portal user is a CF org manager, so they exist in UAA by
+//     definition; a GitLab account is not guaranteed.
+//   - Users enter their AD credentials on UAA's own login page (same trust as
+//     `cf login`); the portal never sees a password.
 //
-// CF API authorization checks (does this user hold OrgManager on org X?) use a
-// separate service-account UAA client; see internal/cfapi.
+// This login client (authorization_code, scope openid, no CF API authorities)
+// is separate from the read-only service-account client used for CF API
+// authorization checks; see internal/cfapi and docs/cf-uaa-setup.md.
 package auth
 
 import (
@@ -22,36 +28,35 @@ import (
 )
 
 type Client struct {
-	cfg       *oauth2.Config
-	gitlabURL string
-	http      *http.Client
+	cfg    *oauth2.Config
+	uaaURL string
+	http   *http.Client
 }
 
 type User struct {
-	GitLabID int    // numeric GitLab user ID
-	Username string // matches sAMAccountName / LDAP id, e.g. F920U2K
+	Username string // UAA user_name claim == sAMAccountName / LDAP id, e.g. F920U2K
 	Email    string
 }
 
-func NewGitLabOAuth(gitlabURL, clientID, clientSecret, redirectURL string) (*Client, error) {
-	gitlabURL = strings.TrimRight(gitlabURL, "/")
+func NewUAAOAuth(uaaURL, clientID, clientSecret, redirectURL string) (*Client, error) {
+	uaaURL = strings.TrimRight(uaaURL, "/")
 	return &Client{
-		gitlabURL: gitlabURL,
-		http:      &http.Client{Timeout: 15 * time.Second},
+		uaaURL: uaaURL,
+		http:   &http.Client{Timeout: 15 * time.Second},
 		cfg: &oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
 			RedirectURL:  redirectURL,
-			Scopes:       []string{"read_user"},
+			Scopes:       []string{"openid"},
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  gitlabURL + "/oauth/authorize",
-				TokenURL: gitlabURL + "/oauth/token",
+				AuthURL:  uaaURL + "/oauth/authorize",
+				TokenURL: uaaURL + "/oauth/token",
 			},
 		},
 	}, nil
 }
 
-// AuthURL builds the GitLab /oauth/authorize redirect target. `state` must be a
+// AuthURL builds the UAA /oauth/authorize redirect target. `state` must be a
 // cryptographically random per-request value the caller persists in a cookie
 // and verifies on callback.
 func (c *Client) AuthURL(state string) string {
@@ -59,14 +64,14 @@ func (c *Client) AuthURL(state string) string {
 }
 
 // Exchange swaps an authorization code for an access token, then looks up the
-// authenticated user via GET /api/v4/user.
+// authenticated user via GET /userinfo.
 func (c *Client) Exchange(ctx context.Context, code string) (User, error) {
 	tok, err := c.cfg.Exchange(ctx, code)
 	if err != nil {
 		return User{}, fmt.Errorf("oauth exchange: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.gitlabURL+"/api/v4/user", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.uaaURL+"/userinfo", nil)
 	if err != nil {
 		return User{}, err
 	}
@@ -74,20 +79,22 @@ func (c *Client) Exchange(ctx context.Context, code string) (User, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return User{}, fmt.Errorf("gitlab user lookup: %w", err)
+		return User{}, fmt.Errorf("uaa userinfo: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return User{}, fmt.Errorf("gitlab user lookup: status %d", resp.StatusCode)
+		return User{}, fmt.Errorf("uaa userinfo: status %d", resp.StatusCode)
 	}
 
 	var raw struct {
-		ID       int    `json:"id"`
-		Username string `json:"username"`
+		Username string `json:"user_name"`
 		Email    string `json:"email"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return User{}, fmt.Errorf("decode user: %w", err)
+		return User{}, fmt.Errorf("decode userinfo: %w", err)
 	}
-	return User{GitLabID: raw.ID, Username: raw.Username, Email: raw.Email}, nil
+	if raw.Username == "" {
+		return User{}, fmt.Errorf("uaa userinfo: empty user_name claim")
+	}
+	return User{Username: raw.Username, Email: raw.Email}, nil
 }
