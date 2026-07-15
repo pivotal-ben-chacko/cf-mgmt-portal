@@ -34,11 +34,44 @@ required at startup or the app exits). They fall into three groups:
 | Group | Vars | Setup guide |
 |---|---|---|
 | Portal session | `PORTAL_URL`, `SESSION_KEY`, `FOUNDATION`, `TARGET_BRANCH` | [docs/gitlab-setup.md](docs/gitlab-setup.md#session_key--what-it-is-and-how-to-create-it) |
-| GitLab (login + repo) | `GITLAB_URL`, `GITLAB_OAUTH_CLIENT_ID`/`_SECRET`, `GITLAB_TOKEN`, `CONFIG_REPO_PROJECT`, `PLATFORM_TEAM_GROUP` | [docs/gitlab-setup.md](docs/gitlab-setup.md) |
+| GitLab (config repo) | `GITLAB_URL`, `GITLAB_TOKEN`, `CONFIG_REPO_PROJECT`, `PLATFORM_TEAM_GROUP` | [docs/gitlab-setup.md](docs/gitlab-setup.md) |
+| UAA login | `UAA_LOGIN_CLIENT_ID`/`_SECRET` | [docs/cf-uaa-setup.md](docs/cf-uaa-setup.md) |
 | CF authz | `CF_API_URL`, `UAA_URL`, `UAA_CLIENT_ID`/`_SECRET` | [docs/cf-uaa-setup.md](docs/cf-uaa-setup.md) |
 
-The two setup guides cover how to create each GitLab/CF object and retrieve its
-value, the OAuth login flow, and the UAA service-account client.
+The setup guides cover how to create each GitLab/CF object and retrieve its
+value, the login flow, and both UAA clients. `manifest.yml` holds only
+`CHANGE-ME` placeholders for secrets — set real values with
+`cf set-env cf-mgmt-portal <VAR> <value>` and restage.
+
+### UAA clients
+
+Login and authorization use **two separate UAA clients** (create both once per
+foundation; full walkthrough in [docs/cf-uaa-setup.md](docs/cf-uaa-setup.md)):
+
+- **`cf-mgmt-portal-login`** (`UAA_LOGIN_CLIENT_*`) — user sign-in via the
+  authorization-code flow. Users authenticate on UAA's own login page; the
+  `user_name` claim from `/userinfo` is the LDAP `sAMAccountName` the portal
+  uses everywhere. No CF API authorities.
+
+  ```bash
+  uaac target https://uaa.system.<domain>
+  uaac token client get admin -s <UAA_ADMIN_CLIENT_SECRET>
+  uaac client add cf-mgmt-portal-login \
+    --name "cf-mgmt-portal user login" \
+    --authorized_grant_types authorization_code,refresh_token \
+    --scope openid \
+    --autoapprove openid \
+    --redirect_uri "<PORTAL_URL>/auth/callback" \
+    --secret <CHOOSE_A_STRONG_SECRET>
+  ```
+
+  The `--redirect_uri` must equal `$PORTAL_URL/auth/callback` **exactly**
+  (scheme included), and a login client takes `--scope`, not `--authorities`.
+
+- **`cf-mgmt-portal`** (`UAA_CLIENT_*`) — read-only `client_credentials`
+  service account (`--authorities cloud_controller.admin_read_only`) used to
+  check the logged-in user's CF org role before any action. It authorizes; it
+  never writes.
 
 ## Develop
 
