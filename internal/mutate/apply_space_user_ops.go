@@ -26,7 +26,7 @@ func ApplySpaceUserOps(current []byte, ops []Op) ([]byte, error) {
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
-	doc = normalizeRoleLists(doc)
+	doc = normalizeRoleLists(doc, spaceSchema)
 
 	// Clean round-trip of the unedited document, to compare against after the
 	// edits — this makes a net no-op batch (e.g. add then remove the same user)
@@ -37,7 +37,7 @@ func ApplySpaceUserOps(current []byte, ops []Op) ([]byte, error) {
 	}
 
 	for _, op := range ops {
-		doc, _, err = applyUserEdit(doc, op.Role, op.Origin, op.User, op.Action)
+		doc, _, err = applyUserEdit(doc, spaceSchema, op.Role, op.Origin, op.User, op.Action)
 		if err != nil {
 			return nil, err
 		}

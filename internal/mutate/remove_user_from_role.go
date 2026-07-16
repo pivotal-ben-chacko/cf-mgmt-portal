@@ -16,8 +16,8 @@ func RemoveUserFromSpaceRole(current []byte, role Role, origin Origin, username 
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
-	doc = normalizeRoleLists(doc)
-	doc, changed, err := applyUserEdit(doc, role, origin, username, "remove")
+	doc = normalizeRoleLists(doc, spaceSchema)
+	doc, changed, err := applyUserEdit(doc, spaceSchema, role, origin, username, "remove")
 	if err != nil {
 		return nil, err
 	}

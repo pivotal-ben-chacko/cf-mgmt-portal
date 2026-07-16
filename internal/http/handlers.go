@@ -523,7 +523,7 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 					"- **Space:** %s\n"+
 					"- **Requested by:** @%s\n\n"+
 					"### Changes\n%s",
-				s.deps.Foundation, org, space, sess.Username, opsSummary(ops),
+				s.deps.Foundation, org, space, sess.Username, opsSummary(ops, "space"),
 			),
 			AssigneeIDs: assignees,
 		})
@@ -540,17 +540,160 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	s.renderResult(w, sess, rec, action, "MR opened. Platform team will review and merge.", mrURL, true)
 }
 
-// opsSummary renders the batch of role changes as a markdown list for the MR body.
-func opsSummary(ops []mutate.Op) string {
+// opsSummary renders the batch of role changes as a markdown list for the MR
+// body. scope is the role-key prefix: "space" or "org".
+func opsSummary(ops []mutate.Op, scope string) string {
 	var b strings.Builder
 	for _, op := range ops {
 		verb := "Add"
 		if op.Action == "remove" {
 			verb = "Remove"
 		}
-		fmt.Fprintf(&b, "- %s **%s** as space-%s (%s)\n", verb, op.User, op.Role, op.Origin)
+		fmt.Fprintf(&b, "- %s **%s** as %s-%s (%s)\n", verb, op.User, scope, op.Role, op.Origin)
 	}
 	return b.String()
+}
+
+func (s *Server) handleManageOrgUsers(w http.ResponseWriter, r *http.Request) {
+	sess, _ := readSession(r, s.deps.SessionKey)
+
+	if r.Method == http.MethodGet {
+		renderTemplate(w, "manage_org_users.html", map[string]any{
+			"User":       sess.Username,
+			"Foundation": s.deps.Foundation,
+			"CSRFToken":  sess.CSRFToken,
+		})
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		renderError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		renderError(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	if !verifyCSRF(r, sess) {
+		renderError(w, http.StatusForbidden, "invalid CSRF token (your session may have expired — please sign in again)")
+		return
+	}
+
+	org := strings.TrimSpace(r.FormValue("org"))
+	if org == "" {
+		renderError(w, http.StatusBadRequest, "missing org")
+		return
+	}
+	var ops []mutate.Op
+	if err := json.Unmarshal([]byte(r.FormValue("ops")), &ops); err != nil {
+		renderError(w, http.StatusBadRequest, "could not parse changes")
+		return
+	}
+	if len(ops) == 0 {
+		renderError(w, http.StatusBadRequest, "no changes selected")
+		return
+	}
+
+	ctx := r.Context()
+	rec := NewRecorder()
+	action := fmt.Sprintf("manage org users on %s (%d change(s))", org, len(ops))
+	filePath := path.Join(s.deps.Foundation, org, "orgConfig.yml")
+
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	var current []byte
+	if err := rec.Do("Reading "+filePath, func() (string, error) {
+		b, err := s.deps.GitLab.GetFile(ctx, s.deps.ConfigRepoProject, s.deps.TargetBranch, filePath)
+		if err != nil {
+			return "", err
+		}
+		current = b
+		return fmt.Sprintf("%d bytes", len(current)), nil
+	}); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	var updated []byte
+	if err := rec.Do("Computing new YAML", func() (string, error) {
+		b, err := mutate.ApplyOrgUserOps(current, ops)
+		if err != nil {
+			return "", err
+		}
+		updated = b
+		return fmt.Sprintf("%d change(s)", len(ops)), nil
+	}); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	if string(updated) == string(current) {
+		rec.Skip("Open merge request", "no change required")
+		headline := fmt.Sprintf("Nothing to change on %s — the org already matches your selection.", org)
+		s.renderResult(w, sess, rec, action, headline, "", true)
+		return
+	}
+
+	branch := fmt.Sprintf("portal/manage-org-users-%s-%s", org, randomToken()[:8])
+
+	if err := rec.Do("Creating branch "+branch, func() (string, error) {
+		return "", s.deps.GitLab.CreateBranch(ctx, s.deps.ConfigRepoProject, branch, s.deps.TargetBranch)
+	}); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	if err := rec.Do("Committing change", func() (string, error) {
+		msg := fmt.Sprintf("portal: manage org users on %s (by %s)", org, sess.Username)
+		return "", s.deps.GitLab.CommitFiles(ctx, s.deps.ConfigRepoProject, branch, msg, []gitlab.CommitAction{
+			{Action: "update", FilePath: filePath, Content: string(updated)},
+		})
+	}); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	// Best-effort: do not block on assignee lookup.
+	var assignees []int
+	_ = rec.Do(fmt.Sprintf("Looking up %s members", s.deps.PlatformTeamGroup), func() (string, error) {
+		a, err := s.deps.GitLab.GroupMembers(ctx, s.deps.PlatformTeamGroup)
+		if err != nil {
+			return "", err
+		}
+		assignees = a
+		return fmt.Sprintf("%d users", len(assignees)), nil
+	})
+
+	var mrURL string
+	if err := rec.Do("Opening merge request", func() (string, error) {
+		u, err := s.deps.GitLab.OpenMR(ctx, s.deps.ConfigRepoProject, gitlab.OpenMRRequest{
+			SourceBranch: branch,
+			TargetBranch: s.deps.TargetBranch,
+			Title:        fmt.Sprintf("[portal] manage org users on %s", org),
+			Description: fmt.Sprintf(
+				"Generated by cf-mgmt-portal.\n\n"+
+					"- **Foundation:** %s\n"+
+					"- **Org:** %s\n"+
+					"- **Requested by:** @%s\n\n"+
+					"### Changes (org roles)\n%s",
+				s.deps.Foundation, org, sess.Username, opsSummary(ops, "org"),
+			),
+			AssigneeIDs: assignees,
+		})
+		if err != nil {
+			return "", err
+		}
+		mrURL = u
+		return "", nil
+	}); err != nil {
+		s.renderResult(w, sess, rec, action, "", "", false)
+		return
+	}
+
+	s.renderResult(w, sess, rec, action, "MR opened. Platform team will review and merge.", mrURL, true)
 }
 
 func (s *Server) handleManageGroups(w http.ResponseWriter, r *http.Request) {
@@ -953,6 +1096,28 @@ func (s *Server) handleAPISpaceUsers(w http.ResponseWriter, r *http.Request) {
 	roles, err := mutate.ListSpaceUsers(b)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, "could not parse spaceConfig.yml")
+		return
+	}
+	writeJSON(w, map[string]any{"roles": roles})
+}
+
+// handleAPIOrgUsers returns the users in each org role, grouped by origin.
+func (s *Server) handleAPIOrgUsers(w http.ResponseWriter, r *http.Request) {
+	org := strings.TrimSpace(r.URL.Query().Get("org"))
+	if org == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing org")
+		return
+	}
+	p := path.Join(s.deps.Foundation, org, "orgConfig.yml")
+	b, err := s.deps.GitLab.GetFile(r.Context(), s.deps.ConfigRepoProject, s.deps.TargetBranch, p)
+	if err != nil {
+		s.logErr(r, err)
+		writeJSONError(w, http.StatusBadGateway, "could not read orgConfig.yml")
+		return
+	}
+	roles, err := mutate.ListOrgUsers(b)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "could not parse orgConfig.yml")
 		return
 	}
 	writeJSON(w, map[string]any{"roles": roles})

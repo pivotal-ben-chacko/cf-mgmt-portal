@@ -25,7 +25,7 @@ func ApplySpaceGroupOps(current []byte, ops []GroupOp) ([]byte, error) {
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
-	doc = normalizeRoleLists(doc)
+	doc = normalizeRoleLists(doc, spaceSchema)
 
 	before, err := yaml.Marshal(doc)
 	if err != nil {
@@ -33,7 +33,7 @@ func ApplySpaceGroupOps(current []byte, ops []GroupOp) ([]byte, error) {
 	}
 
 	for _, op := range ops {
-		doc, _, err = applyGroupEdit(doc, op.Role, op.Group, op.Action)
+		doc, _, err = applyGroupEdit(doc, spaceSchema, op.Role, op.Group, op.Action)
 		if err != nil {
 			return nil, err
 		}

@@ -14,6 +14,10 @@ const (
 	RoleManager   Role = "manager"
 	RoleAuditor   Role = "auditor"
 	RoleSupporter Role = "supporter"
+
+	// RoleBillingManager is org-only; RoleManager and RoleAuditor are valid in
+	// both space and org scope (space-manager / org-manager, etc.).
+	RoleBillingManager Role = "billingmanager"
 )
 
 type Origin string
@@ -34,8 +38,8 @@ func AddUserToSpaceRole(current []byte, role Role, origin Origin, username strin
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
-	doc = normalizeRoleLists(doc)
-	doc, changed, err := applyUserEdit(doc, role, origin, username, "add")
+	doc = normalizeRoleLists(doc, spaceSchema)
+	doc, changed, err := applyUserEdit(doc, spaceSchema, role, origin, username, "add")
 	if err != nil {
 		return nil, err
 	}

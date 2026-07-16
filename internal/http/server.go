@@ -58,10 +58,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/actions/create-space", s.requireAuth(s.handleCreateSpace))
 	s.mux.HandleFunc("/actions/manage-users", s.requireAuth(s.handleManageUsers))
 	s.mux.HandleFunc("/actions/manage-groups", s.requireAuth(s.handleManageGroups))
+	s.mux.HandleFunc("/actions/manage-org-users", s.requireAuth(s.handleManageOrgUsers))
 	s.mux.HandleFunc("/api/orgs", s.requireAuth(s.handleAPIOrgs))
 	s.mux.HandleFunc("/api/spaces", s.requireAuth(s.handleAPISpaces))
 	s.mux.HandleFunc("/api/space-users", s.requireAuth(s.handleAPISpaceUsers))
 	s.mux.HandleFunc("/api/space-groups", s.requireAuth(s.handleAPISpaceGroups))
+	s.mux.HandleFunc("/api/org-users", s.requireAuth(s.handleAPIOrgUsers))
 	s.mux.HandleFunc("/assets/", handleAsset)
 	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
