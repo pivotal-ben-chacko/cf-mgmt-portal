@@ -32,3 +32,28 @@ func TestPageTemplatesExecute(t *testing.T) {
 		}
 	}
 }
+
+// TestHeaderAdminBadge checks the header appends "(Admin)" to the username
+// exactly when IsAdmin is set.
+func TestHeaderAdminBadge(t *testing.T) {
+	for _, tc := range []struct {
+		isAdmin bool
+		want    bool
+	}{
+		{isAdmin: true, want: true},
+		{isAdmin: false, want: false},
+	} {
+		var b strings.Builder
+		err := tpl.ExecuteTemplate(&b, "index.html", map[string]any{
+			"User":       "F7PAYU0",
+			"IsAdmin":    tc.isAdmin,
+			"Foundation": "fog",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(b.String(), "(Admin)"); got != tc.want {
+			t.Errorf("IsAdmin=%v: badge shown = %v, want %v", tc.isAdmin, got, tc.want)
+		}
+	}
+}

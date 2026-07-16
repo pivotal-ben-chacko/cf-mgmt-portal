@@ -24,6 +24,10 @@ type session struct {
 	Email     string    `json:"e"`
 	Expires   time.Time `json:"exp"`
 	CSRFToken string    `json:"csrf"`
+	// Admin is display-only: set at login from PORTAL_ADMIN_USERS /
+	// PORTAL_ADMIN_GROUPS so the UI can badge the user. Authz never trusts it —
+	// verifyOrgManager re-checks live on every action.
+	Admin bool `json:"adm,omitempty"`
 }
 
 func encodeSession(key []byte, s session) (string, error) {

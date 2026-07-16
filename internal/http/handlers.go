@@ -32,6 +32,23 @@ func (s *Server) isPortalAdmin(username string) bool {
 	return false
 }
 
+// adminGroupFor returns the first configured admin UAA group username is a
+// member of, or "" if none match.
+func (s *Server) adminGroupFor(ctx context.Context, username string) (string, error) {
+	groups, err := s.deps.CFAPI.UserGroups(ctx, username)
+	if err != nil {
+		return "", err
+	}
+	for _, g := range groups {
+		for _, ag := range s.deps.AdminGroups {
+			if g == ag {
+				return g, nil
+			}
+		}
+	}
+	return "", nil
+}
+
 // inAdminGroup reports whether username is a member of any of the configured
 // admin UAA groups. The lookup is best-effort: a failure (e.g. the service
 // account lacks scim.read) is recorded in the step log and treated as "not an
@@ -39,17 +56,13 @@ func (s *Server) isPortalAdmin(username string) bool {
 func (s *Server) inAdminGroup(ctx context.Context, rec *Recorder, username string) bool {
 	member := false
 	_ = rec.Do("Checking admin group membership", func() (string, error) {
-		groups, err := s.deps.CFAPI.UserGroups(ctx, username)
+		g, err := s.adminGroupFor(ctx, username)
 		if err != nil {
 			return "", err
 		}
-		for _, g := range groups {
-			for _, ag := range s.deps.AdminGroups {
-				if g == ag {
-					member = true
-					return "member of " + g, nil
-				}
-			}
+		if g != "" {
+			member = true
+			return "member of " + g, nil
 		}
 		return "not in " + strings.Join(s.deps.AdminGroups, ", "), nil
 	})
@@ -90,6 +103,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	sess, _ := readSession(r, s.deps.SessionKey)
 	renderTemplate(w, "index.html", map[string]any{
 		"User":       sess.Username,
+		"IsAdmin":    sess.Admin,
 		"Foundation": s.deps.Foundation,
 	})
 }
@@ -130,6 +144,15 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Email:     user.Email,
 		Expires:   time.Now().Add(sessionTTL),
 		CSRFToken: randomToken(),
+		Admin:     s.isPortalAdmin(user.Username),
+	}
+	// Best-effort group lookup for the UI badge only; actions re-check live.
+	if !sess.Admin && len(s.deps.AdminGroups) > 0 {
+		g, err := s.adminGroupFor(r.Context(), user.Username)
+		if err != nil {
+			s.logErr(r, fmt.Errorf("admin group lookup for %s: %w", user.Username, err))
+		}
+		sess.Admin = g != ""
 	}
 	if err := setSessionCookie(w, s.deps.SessionKey, sess); err != nil {
 		s.logErr(r, err)
@@ -150,6 +173,7 @@ func (s *Server) handleAddUserToRole(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "add_user.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -290,6 +314,7 @@ func (s *Server) handleRemoveUserFromRole(w http.ResponseWriter, r *http.Request
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "remove_user.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -430,6 +455,7 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "manage_users.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -588,6 +614,7 @@ func (s *Server) handleManageOrgUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "manage_org_users.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -730,6 +757,7 @@ func (s *Server) handleManageGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "manage_groups.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -887,6 +915,7 @@ func (s *Server) handleCreateSpace(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		renderTemplate(w, "create_space.html", map[string]any{
 			"User":       sess.Username,
+			"IsAdmin":    sess.Admin,
 			"Foundation": s.deps.Foundation,
 			"CSRFToken":  sess.CSRFToken,
 		})
@@ -1197,6 +1226,7 @@ func (s *Server) renderResult(w http.ResponseWriter, sess session, rec *Recorder
 	w.WriteHeader(status)
 	err := tpl.ExecuteTemplate(w, "result.html", map[string]any{
 		"User":       sess.Username,
+		"IsAdmin":    sess.Admin,
 		"Foundation": s.deps.Foundation,
 		"Action":     action,
 		"Headline":   headline,

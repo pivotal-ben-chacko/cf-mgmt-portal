@@ -6,7 +6,7 @@
   </div>
   {{- if .User }}
   <div class="user-info">
-    {{ .User }}
+    {{ .User }}{{ if .IsAdmin }} <span class="admin-badge">(Admin)</span>{{ end }}
     {{- if .Foundation }} · <code>{{ .Foundation }}</code>{{ end -}}
     {{- " " -}}· <a href="/auth/logout">Sign out</a>
   </div>
