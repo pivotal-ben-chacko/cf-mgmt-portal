@@ -69,9 +69,23 @@ foundation; full walkthrough in [docs/cf-uaa-setup.md](docs/cf-uaa-setup.md)):
   (scheme included), and a login client takes `--scope`, not `--authorities`.
 
 - **`cf-mgmt-portal`** (`UAA_CLIENT_*`) — read-only `client_credentials`
-  service account (`--authorities cloud_controller.admin_read_only`) used to
-  check the logged-in user's CF org role before any action. It authorizes; it
-  never writes.
+  service account (`--authorities cloud_controller.admin_read_only,scim.read`)
+  used to check the logged-in user's CF org role before any action, and — when
+  `PORTAL_ADMIN_GROUPS` is set — their UAA group memberships. It authorizes;
+  it never writes.
+
+### Admin bypass
+
+Two optional env vars exempt users from the OrgManager check (they can open
+MRs for any org; platform-team MR review remains the write gate):
+
+- `PORTAL_ADMIN_USERS` — comma-separated usernames (e.g. `admin`).
+- `PORTAL_ADMIN_GROUPS` — comma-separated UAA group names; any member gets the
+  exemption. Use `cloud_controller.admin` to cover the platform ops team, or
+  an LDAP-mapped UAA group. Names must match the UAA group display name
+  exactly. Requires `scim.read` on the `cf-mgmt-portal` client; if the lookup
+  fails, the portal logs the step and falls back to the normal OrgManager
+  check.
 
 ## Develop
 

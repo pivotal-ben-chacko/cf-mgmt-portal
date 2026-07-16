@@ -28,6 +28,12 @@ type Deps struct {
 	// the UAA admin user). They can open MRs for any org; the platform team's
 	// MR review remains the write gate. Empty means no exemptions.
 	AdminUsers []string
+
+	// AdminGroups lists UAA group names (e.g. cloud_controller.admin, or an
+	// LDAP-mapped platform-ops group) whose members get the same exemption as
+	// AdminUsers. Membership is looked up via UAA SCIM per action, which needs
+	// the CFAPI service account to hold scim.read. Empty disables the check.
+	AdminGroups []string
 }
 
 type Server struct {

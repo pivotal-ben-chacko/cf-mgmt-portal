@@ -1,9 +1,10 @@
-// Package cfapi is a minimal CF API v3 client used to authorize that the
-// requesting GitLab user (whose username matches their LDAP/CF identity) holds
-// the appropriate role on the target org before the portal will mutate that
-// org's YAML.
+// Package cfapi is a minimal CF API v3 (and UAA SCIM read) client used to
+// authorize the requesting user (whose username matches their LDAP/CF
+// identity) before the portal will mutate an org's YAML: either they hold the
+// appropriate role on the target org, or they belong to a configured admin
+// UAA group.
 //
-// The portal NEVER writes to CF via this client — all CF mutations flow
+// The portal NEVER writes to CF or UAA via this client — all CF mutations flow
 // through the cf-mgmt pipeline. Read-only is sufficient.
 package cfapi
 
@@ -31,19 +32,22 @@ const (
 
 type Client struct {
 	apiURL string
+	uaaURL string
 	http   *http.Client
 }
 
 func NewClient(apiURL, uaaURL, uaaClientID, uaaClientSecret string) *Client {
+	uaaURL = strings.TrimRight(uaaURL, "/")
 	cfg := &clientcredentials.Config{
 		ClientID:     uaaClientID,
 		ClientSecret: uaaClientSecret,
-		TokenURL:     strings.TrimRight(uaaURL, "/") + "/oauth/token",
+		TokenURL:     uaaURL + "/oauth/token",
 	}
 	httpClient := cfg.Client(context.Background())
 	httpClient.Timeout = 30 * time.Second
 	return &Client{
 		apiURL: strings.TrimRight(apiURL, "/"),
+		uaaURL: uaaURL,
 		http:   httpClient,
 	}
 }
@@ -68,6 +72,39 @@ func (c *Client) UserHasOrgRole(ctx context.Context, ldapUsername, orgName strin
 		return false, nil
 	}
 	return c.hasRole(ctx, userGUID, orgGUID, role)
+}
+
+// UserGroups returns the UAA group names (SCIM groups[].display) of every UAA
+// identity with the given username. Local dev stacks can hold two identities
+// per username (a uaa-origin login user and a shadow ldap-origin user), so the
+// result is the deduped union across origins. Requires the service-account
+// client to hold the `scim.read` authority. An unknown username is not an
+// error; it returns an empty list.
+func (c *Client) UserGroups(ctx context.Context, username string) ([]string, error) {
+	filter := fmt.Sprintf("userName eq %q", username)
+	u := c.uaaURL + "/Users?attributes=userName,groups&filter=" + url.QueryEscape(filter)
+	var resp struct {
+		Resources []struct {
+			Groups []struct {
+				Display string `json:"display"`
+			} `json:"groups"`
+		} `json:"resources"`
+	}
+	if err := c.get(ctx, u, &resp); err != nil {
+		return nil, fmt.Errorf("uaa lookup user %q: %w", username, err)
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range resp.Resources {
+		for _, g := range r.Groups {
+			if g.Display == "" || seen[g.Display] {
+				continue
+			}
+			seen[g.Display] = true
+			out = append(out, g.Display)
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) orgGUID(ctx context.Context, name string) (string, error) {

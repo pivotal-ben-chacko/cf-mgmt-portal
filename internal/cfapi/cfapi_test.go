@@ -14,7 +14,65 @@ func newTestClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &Client{apiURL: srv.URL, http: srv.Client()}
+	return &Client{apiURL: srv.URL, uaaURL: srv.URL, http: srv.Client()}
+}
+
+func TestUserGroups_UnionsAcrossOriginsAndDedupes(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Users" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+			return
+		}
+		q := r.URL.Query()
+		if got := q.Get("filter"); got != `userName eq "F920U2K"` {
+			t.Errorf("filter query: %q", got)
+		}
+		if got := q.Get("attributes"); got != "userName,groups" {
+			t.Errorf("attributes query: %q", got)
+		}
+		// Two identities for the same username (uaa + ldap origins) with an
+		// overlapping group.
+		_, _ = io.WriteString(w, `{"resources":[
+			{"groups":[{"display":"uaa.user"},{"display":"platform.admins"}]},
+			{"groups":[{"display":"platform.admins"},{"display":"cloud_controller.admin"}]}
+		]}`)
+	})
+	got, err := c.UserGroups(context.Background(), "F920U2K")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"uaa.user", "platform.admins", "cloud_controller.admin"}
+	if len(got) != len(want) {
+		t.Fatalf("groups = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("groups = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestUserGroups_UnknownUserReturnsEmpty(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"resources":[]}`)
+	})
+	got, err := c.UserGroups(context.Background(), "F00NULL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no groups, got %v", got)
+	}
+}
+
+func TestUserGroups_PropagatesAPIError(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":"insufficient_scope"}`)
+	})
+	if _, err := c.UserGroups(context.Background(), "F920U2K"); err == nil {
+		t.Fatal("expected error when scim.read is missing")
+	}
 }
 
 func TestUserHasOrgRole_TrueWhenAllLookupsSucceed(t *testing.T) {

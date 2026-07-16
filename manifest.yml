@@ -24,6 +24,11 @@ applications:
     # Comma-separated usernames exempt from the OrgManager authz check (they
     # can open MRs for any org; MR review remains the gate). Optional.
     PORTAL_ADMIN_USERS: admin
+    # Comma-separated UAA group names whose members get the same exemption
+    # (e.g. cloud_controller.admin, or an LDAP-mapped platform-ops group).
+    # Names must match the UAA group display name exactly. Requires scim.read
+    # on the UAA_CLIENT_* service account — see docs/cf-uaa-setup.md. Optional.
+    PORTAL_ADMIN_GROUPS: cloud_controller.admin
 
     # GitLab (config-repo writes via PAT; no longer used for login)
     GITLAB_URL: http://gitlab.skynetsystems.io:8929        # reachable from CF (DNS -> 192.168.1.160); no TLS needed

@@ -18,6 +18,7 @@ type config struct {
 	Foundation   string   // subdirectory in the config repo, e.g. "fog"
 	TargetBranch string   // optional, defaults to "development"
 	AdminUsers   []string // optional, usernames exempt from the OrgManager check
+	AdminGroups  []string // optional, UAA groups whose members get the same exemption
 
 	GitLabURL         string
 	GitLabToken       string
@@ -60,6 +61,7 @@ func main() {
 		TargetBranch:      cfg.TargetBranch,
 		Foundation:        cfg.Foundation,
 		AdminUsers:        cfg.AdminUsers,
+		AdminGroups:       cfg.AdminGroups,
 	})
 
 	port := os.Getenv("PORT")
@@ -77,6 +79,7 @@ func loadConfig() config {
 		Foundation:           requireEnv("FOUNDATION"),
 		TargetBranch:         os.Getenv("TARGET_BRANCH"),
 		AdminUsers:           splitCSV(os.Getenv("PORTAL_ADMIN_USERS")),
+		AdminGroups:          splitCSV(os.Getenv("PORTAL_ADMIN_GROUPS")),
 		GitLabURL:            requireEnv("GITLAB_URL"),
 		GitLabToken:          requireEnv("GITLAB_TOKEN"),
 		ConfigRepoProject:    requireEnv("CONFIG_REPO_PROJECT"),

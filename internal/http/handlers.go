@@ -32,14 +32,42 @@ func (s *Server) isPortalAdmin(username string) bool {
 	return false
 }
 
+// inAdminGroup reports whether username is a member of any of the configured
+// admin UAA groups. The lookup is best-effort: a failure (e.g. the service
+// account lacks scim.read) is recorded in the step log and treated as "not an
+// admin", so the normal OrgManager check still runs.
+func (s *Server) inAdminGroup(ctx context.Context, rec *Recorder, username string) bool {
+	member := false
+	_ = rec.Do("Checking admin group membership", func() (string, error) {
+		groups, err := s.deps.CFAPI.UserGroups(ctx, username)
+		if err != nil {
+			return "", err
+		}
+		for _, g := range groups {
+			for _, ag := range s.deps.AdminGroups {
+				if g == ag {
+					member = true
+					return "member of " + g, nil
+				}
+			}
+		}
+		return "not in " + strings.Join(s.deps.AdminGroups, ", "), nil
+	})
+	return member
+}
+
 // verifyOrgManager runs the standard authz step for a mutating action: the
 // logged-in user must hold OrgManager on org via the CF API, unless they are
-// a configured portal admin, in which case the check is skipped and recorded
-// as such in the step log.
+// a configured portal admin (by username or UAA group membership), in which
+// case the check is skipped and recorded as such in the step log.
 func (s *Server) verifyOrgManager(ctx context.Context, rec *Recorder, sess session, org string) error {
 	title := fmt.Sprintf("Verifying you can manage %s", org)
 	if s.isPortalAdmin(sess.Username) {
 		rec.Skip(title, sess.Username+" is a portal admin")
+		return nil
+	}
+	if len(s.deps.AdminGroups) > 0 && s.inAdminGroup(ctx, rec, sess.Username) {
+		rec.Skip(title, sess.Username+" is in an admin group")
 		return nil
 	}
 	return rec.Do(title, func() (string, error) {

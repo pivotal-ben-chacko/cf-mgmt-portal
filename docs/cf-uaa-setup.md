@@ -56,8 +56,12 @@ curl -sk -X POST "$UAA/oauth/token" -d grant_type=password -d client_id=cf -d cl
 ## Create the UAA client
 
 Rather than reuse the `admin` client, create a least-privilege client that can
-only read what `internal/cfapi` needs (`cloud_controller.admin_read_only` — read
-every org, user, and role, with no write capability).
+only read what `internal/cfapi` needs:
+
+- `cloud_controller.admin_read_only` — read every org, user, and role, with no
+  write capability.
+- `scim.read` — read UAA users and their group memberships; only needed when
+  `PORTAL_ADMIN_GROUPS` is set (see [Admin groups](#admin-groups-portal_admin_groups)).
 
 > **`--authorities` vs `--scope`.** For a `client_credentials` client, set
 > **`authorities`** — those are the permissions on the client's *own* token.
@@ -89,7 +93,7 @@ uaac token client get admin -s <UAA_ADMIN_CLIENT_SECRET>
 uaac client add cf-mgmt-portal \
   --name "cf-mgmt-portal authz service account" \
   --authorized_grant_types client_credentials \
-  --authorities cloud_controller.admin_read_only \
+  --authorities cloud_controller.admin_read_only,scim.read \
   --secret <CHOOSE_A_STRONG_SECRET>
 
 # Confirm it exists (secret is not shown back):
@@ -113,7 +117,7 @@ curl -sk -X POST "$UAA/oauth/clients" \
     "name": "cf-mgmt-portal authz service account",
     "secret": "<CHOOSE_A_STRONG_SECRET>",
     "authorized_grant_types": ["client_credentials"],
-    "authorities": ["cloud_controller.admin_read_only"]
+    "authorities": ["cloud_controller.admin_read_only", "scim.read"]
   }'
 ```
 
@@ -153,6 +157,41 @@ curl -sk -H "Authorization: Bearer $T" "$CFAPI/v3/organizations?per_page=5" \
 ```
 
 If that prints org names, the service account is good.
+
+## Admin groups (`PORTAL_ADMIN_GROUPS`)
+
+`PORTAL_ADMIN_GROUPS` is a comma-separated list of UAA group names whose
+members bypass the OrgManager check on every action (same effect as listing a
+username in `PORTAL_ADMIN_USERS`; the platform team's MR review remains the
+write gate). Before each action the portal looks the logged-in user up via UAA
+SCIM (`GET /Users?filter=userName eq "<user>"`) with the service-account
+client and compares the user's `groups[].display` names against the list.
+
+- **Platform ops teams are usually covered by `cloud_controller.admin`** —
+  every CF admin is a member of that UAA group, so
+  `PORTAL_ADMIN_GROUPS: cloud_controller.admin` grants the whole team access
+  with no extra UAA setup.
+- **LDAP/AD groups** only appear as UAA groups if your UAA's LDAP integration
+  maps them (`ldap.groups` profile / external group mappings). Verify what UAA
+  actually reports for a user before relying on an AD group name:
+
+  ```bash
+  T=$(curl -sk -X POST "$UAA/oauth/token" -d grant_type=client_credentials \
+       -d client_id=cf-mgmt-portal --data-urlencode "client_secret=<secret>" \
+       | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+  curl -sk -G "$UAA/Users" -H "Authorization: Bearer $T" \
+    --data-urlencode 'filter=userName eq "F920U2K"' \
+    --data-urlencode 'attributes=userName,groups' \
+    | python3 -m json.tool
+  ```
+
+- Group names must match the SCIM `display` value **exactly** (case included).
+- If the membership lookup fails (most commonly the client is missing
+  `scim.read` — add it with
+  `uaac client update cf-mgmt-portal --authorities cloud_controller.admin_read_only,scim.read`
+  and restart the portal), the step is recorded as an error on the result page
+  and the action falls back to the normal OrgManager check, so non-admin users
+  are unaffected.
 
 ## Create the login client (`UAA_LOGIN_CLIENT_*`)
 
