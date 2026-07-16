@@ -23,6 +23,11 @@ type Deps struct {
 	SessionKey        []byte
 	TargetBranch      string // MR base; defaults to "development"
 	Foundation        string
+
+	// AdminUsers lists usernames exempt from the OrgManager authz check (e.g.
+	// the UAA admin user). They can open MRs for any org; the platform team's
+	// MR review remains the write gate. Empty means no exemptions.
+	AdminUsers []string
 }
 
 type Server struct {

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -20,6 +21,38 @@ import (
 )
 
 const stateCookieName = "cf_mgmt_portal_oauth_state"
+
+// isPortalAdmin reports whether username is exempt from the OrgManager check.
+func (s *Server) isPortalAdmin(username string) bool {
+	for _, a := range s.deps.AdminUsers {
+		if a == username {
+			return true
+		}
+	}
+	return false
+}
+
+// verifyOrgManager runs the standard authz step for a mutating action: the
+// logged-in user must hold OrgManager on org via the CF API, unless they are
+// a configured portal admin, in which case the check is skipped and recorded
+// as such in the step log.
+func (s *Server) verifyOrgManager(ctx context.Context, rec *Recorder, sess session, org string) error {
+	title := fmt.Sprintf("Verifying you can manage %s", org)
+	if s.isPortalAdmin(sess.Username) {
+		rec.Skip(title, sess.Username+" is a portal admin")
+		return nil
+	}
+	return rec.Do(title, func() (string, error) {
+		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
+		}
+		return "OrgManager confirmed", nil
+	})
+}
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
@@ -123,16 +156,7 @@ func (s *Server) handleAddUserToRole(w http.ResponseWriter, r *http.Request) {
 	action := fmt.Sprintf("add %s as %s on %s/%s", targetUser, role, org, space)
 	filePath := path.Join(s.deps.Foundation, org, space, "spaceConfig.yml")
 
-	if err := rec.Do(fmt.Sprintf("Verifying you can manage %s", org), func() (string, error) {
-		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
-		}
-		return "OrgManager confirmed", nil
-	}); err != nil {
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}
@@ -272,16 +296,7 @@ func (s *Server) handleRemoveUserFromRole(w http.ResponseWriter, r *http.Request
 	action := fmt.Sprintf("remove %s as %s on %s/%s", targetUser, role, org, space)
 	filePath := path.Join(s.deps.Foundation, org, space, "spaceConfig.yml")
 
-	if err := rec.Do(fmt.Sprintf("Verifying you can manage %s", org), func() (string, error) {
-		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
-		}
-		return "OrgManager confirmed", nil
-	}); err != nil {
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}
@@ -427,16 +442,7 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	action := fmt.Sprintf("manage users on %s/%s (%d change(s))", org, space, len(ops))
 	filePath := path.Join(s.deps.Foundation, org, space, "spaceConfig.yml")
 
-	if err := rec.Do(fmt.Sprintf("Verifying you can manage %s", org), func() (string, error) {
-		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
-		}
-		return "OrgManager confirmed", nil
-	}); err != nil {
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}
@@ -593,16 +599,7 @@ func (s *Server) handleManageGroups(w http.ResponseWriter, r *http.Request) {
 	action := fmt.Sprintf("manage groups on %s/%s (%d change(s))", org, space, len(ops))
 	filePath := path.Join(s.deps.Foundation, org, space, "spaceConfig.yml")
 
-	if err := rec.Do(fmt.Sprintf("Verifying you can manage %s", org), func() (string, error) {
-		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
-		}
-		return "OrgManager confirmed", nil
-	}); err != nil {
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}
@@ -751,16 +748,7 @@ func (s *Server) handleCreateSpace(w http.ResponseWriter, r *http.Request) {
 	action := fmt.Sprintf("create space %s/%s", org, space)
 	spacesPath := path.Join(s.deps.Foundation, org, "spaces.yml")
 
-	if err := rec.Do(fmt.Sprintf("Verifying you can manage %s", org), func() (string, error) {
-		ok, err := s.deps.CFAPI.UserHasOrgRole(ctx, sess.Username, org, cfapi.RoleOrgManager)
-		if err != nil {
-			return "", err
-		}
-		if !ok {
-			return "", fmt.Errorf("%s is not an OrgManager on %s", sess.Username, org)
-		}
-		return "OrgManager confirmed", nil
-	}); err != nil {
+	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}

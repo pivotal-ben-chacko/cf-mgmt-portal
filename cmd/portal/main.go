@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/example/cf-mgmt-portal/internal/auth"
 	"github.com/example/cf-mgmt-portal/internal/cfapi"
@@ -13,9 +14,10 @@ import (
 
 type config struct {
 	PortalURL    string
-	SessionKey   string // raw secret, >= 32 chars
-	Foundation   string // subdirectory in the config repo, e.g. "fog"
-	TargetBranch string // optional, defaults to "development"
+	SessionKey   string   // raw secret, >= 32 chars
+	Foundation   string   // subdirectory in the config repo, e.g. "fog"
+	TargetBranch string   // optional, defaults to "development"
+	AdminUsers   []string // optional, usernames exempt from the OrgManager check
 
 	GitLabURL         string
 	GitLabToken       string
@@ -57,6 +59,7 @@ func main() {
 		SessionKey:        []byte(cfg.SessionKey),
 		TargetBranch:      cfg.TargetBranch,
 		Foundation:        cfg.Foundation,
+		AdminUsers:        cfg.AdminUsers,
 	})
 
 	port := os.Getenv("PORT")
@@ -69,10 +72,11 @@ func main() {
 
 func loadConfig() config {
 	c := config{
-		PortalURL:               requireEnv("PORTAL_URL"),
-		SessionKey:              requireEnv("SESSION_KEY"),
-		Foundation:              requireEnv("FOUNDATION"),
-		TargetBranch:            os.Getenv("TARGET_BRANCH"),
+		PortalURL:            requireEnv("PORTAL_URL"),
+		SessionKey:           requireEnv("SESSION_KEY"),
+		Foundation:           requireEnv("FOUNDATION"),
+		TargetBranch:         os.Getenv("TARGET_BRANCH"),
+		AdminUsers:           splitCSV(os.Getenv("PORTAL_ADMIN_USERS")),
 		GitLabURL:            requireEnv("GITLAB_URL"),
 		GitLabToken:          requireEnv("GITLAB_TOKEN"),
 		ConfigRepoProject:    requireEnv("CONFIG_REPO_PROJECT"),
@@ -88,6 +92,16 @@ func loadConfig() config {
 		log.Fatal("SESSION_KEY must be at least 32 characters")
 	}
 	return c
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func requireEnv(name string) string {

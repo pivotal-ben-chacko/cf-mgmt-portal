@@ -21,6 +21,9 @@ applications:
     SESSION_KEY: CHANGE-ME  # >= 32 chars; generate with `openssl rand -base64 36`
     FOUNDATION: fog
     TARGET_BRANCH: development
+    # Comma-separated usernames exempt from the OrgManager authz check (they
+    # can open MRs for any org; MR review remains the gate). Optional.
+    PORTAL_ADMIN_USERS: admin
 
     # GitLab (config-repo writes via PAT; no longer used for login)
     GITLAB_URL: http://gitlab.skynetsystems.io:8929        # reachable from CF (DNS -> 192.168.1.160); no TLS needed
