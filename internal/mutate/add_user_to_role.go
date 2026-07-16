@@ -34,6 +34,7 @@ func AddUserToSpaceRole(current []byte, role Role, origin Origin, username strin
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
+	doc = normalizeRoleLists(doc)
 	doc, changed, err := applyUserEdit(doc, role, origin, username, "add")
 	if err != nil {
 		return nil, err

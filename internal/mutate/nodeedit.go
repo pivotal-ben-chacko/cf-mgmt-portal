@@ -44,6 +44,40 @@ func originKey(origin Origin) (string, error) {
 	return "", fmt.Errorf("unknown origin: %q", origin)
 }
 
+// roleListKeys are the member-list keys inside a space-<role> block.
+var roleListKeys = []string{"ldap_users", "users", "saml_users", "ldap_groups"}
+
+// normalizeRoleLists replaces nil member lists inside space-role blocks (a
+// bare `ldap_groups:` key in the source) with empty sequences, so the
+// full-document re-marshal renders them as `[]` — matching cf-mgmt's own
+// output style — rather than an explicit `null`. Callers run this right after
+// unmarshalling; the no-op paths still return the caller's original bytes, so
+// normalization only ever reaches the output of a real change.
+func normalizeRoleLists(doc yaml.MapSlice) yaml.MapSlice {
+	for i, it := range doc {
+		if canonicalRoleIdx(keyStr(it.Key)) < 0 {
+			continue
+		}
+		block, ok := it.Value.(yaml.MapSlice)
+		if !ok {
+			continue
+		}
+		for j, item := range block {
+			if item.Value != nil {
+				continue
+			}
+			for _, lk := range roleListKeys {
+				if keyStr(item.Key) == lk {
+					block[j].Value = []interface{}{}
+					break
+				}
+			}
+		}
+		doc[i].Value = block
+	}
+	return doc
+}
+
 // applyUserEdit adds/removes a user under space-<role> / <origin>_users.
 func applyUserEdit(doc yaml.MapSlice, role Role, origin Origin, user, action string) (yaml.MapSlice, bool, error) {
 	listKey, err := originKey(origin)

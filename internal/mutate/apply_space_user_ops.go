@@ -26,6 +26,7 @@ func ApplySpaceUserOps(current []byte, ops []Op) ([]byte, error) {
 	if err := yaml.Unmarshal(current, &doc); err != nil {
 		return nil, fmt.Errorf("parse spaceConfig.yml: %w", err)
 	}
+	doc = normalizeRoleLists(doc)
 
 	// Clean round-trip of the unedited document, to compare against after the
 	// edits — this makes a net no-op batch (e.g. add then remove the same user)
