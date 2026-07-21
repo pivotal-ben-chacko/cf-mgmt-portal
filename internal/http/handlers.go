@@ -476,65 +476,82 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	org := strings.TrimSpace(r.FormValue("org"))
-	space := strings.TrimSpace(r.FormValue("space"))
-	if org == "" || space == "" {
-		renderError(w, http.StatusBadRequest, "missing org or space")
+	if org == "" || !validPathSegment(org) {
+		renderError(w, http.StatusBadRequest, "missing or invalid org")
 		return
 	}
-	var ops []mutate.Op
-	if err := json.Unmarshal([]byte(r.FormValue("ops")), &ops); err != nil {
+	changes, total, err := parseSpaceChanges(r.FormValue("changes"))
+	if err != nil {
 		renderError(w, http.StatusBadRequest, "could not parse changes")
 		return
 	}
-	if len(ops) == 0 {
+	if total == 0 {
 		renderError(w, http.StatusBadRequest, "no changes selected")
 		return
+	}
+	for _, ch := range changes {
+		if !validPathSegment(ch.Space) {
+			renderError(w, http.StatusBadRequest, "invalid space name")
+			return
+		}
 	}
 
 	ctx := r.Context()
 	rec := NewRecorder()
-	action := fmt.Sprintf("manage users on %s/%s (%d change(s))", org, space, len(ops))
-	filePath := path.Join(s.deps.Foundation, org, space, "spaceConfig.yml")
+	action := fmt.Sprintf("manage users on %s (%d space(s), %d change(s))", org, len(changes), total)
 
 	if err := s.verifyOrgManager(ctx, rec, sess, org); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
 	}
 
-	var current []byte
-	if err := rec.Do("Reading "+filePath, func() (string, error) {
-		b, err := s.deps.GitLab.GetFile(ctx, s.deps.ConfigRepoProject, s.deps.TargetBranch, filePath)
-		if err != nil {
-			return "", err
+	var commitActions []gitlab.CommitAction
+	for _, ch := range changes {
+		filePath := path.Join(s.deps.Foundation, org, ch.Space, "spaceConfig.yml")
+
+		var current []byte
+		if err := rec.Do("Reading "+filePath, func() (string, error) {
+			b, err := s.deps.GitLab.GetFile(ctx, s.deps.ConfigRepoProject, s.deps.TargetBranch, filePath)
+			if err != nil {
+				return "", err
+			}
+			current = b
+			return fmt.Sprintf("%d bytes", len(current)), nil
+		}); err != nil {
+			s.renderResult(w, sess, rec, action, "", "", false)
+			return
 		}
-		current = b
-		return fmt.Sprintf("%d bytes", len(current)), nil
-	}); err != nil {
-		s.renderResult(w, sess, rec, action, "", "", false)
-		return
+
+		var updated []byte
+		if err := rec.Do("Computing new YAML for "+ch.Space, func() (string, error) {
+			b, err := mutate.ApplySpaceUserOps(current, ch.Ops)
+			if err != nil {
+				return "", err
+			}
+			updated = b
+			return fmt.Sprintf("%d change(s)", len(ch.Ops)), nil
+		}); err != nil {
+			s.renderResult(w, sess, rec, action, "", "", false)
+			return
+		}
+
+		if string(updated) == string(current) {
+			rec.Skip("Changes for "+ch.Space, "no change required")
+			continue
+		}
+		commitActions = append(commitActions, gitlab.CommitAction{
+			Action: "update", FilePath: filePath, Content: string(updated),
+		})
 	}
 
-	var updated []byte
-	if err := rec.Do("Computing new YAML", func() (string, error) {
-		b, err := mutate.ApplySpaceUserOps(current, ops)
-		if err != nil {
-			return "", err
-		}
-		updated = b
-		return fmt.Sprintf("%d change(s)", len(ops)), nil
-	}); err != nil {
-		s.renderResult(w, sess, rec, action, "", "", false)
-		return
-	}
-
-	if string(updated) == string(current) {
+	if len(commitActions) == 0 {
 		rec.Skip("Open merge request", "no change required")
-		headline := fmt.Sprintf("Nothing to change on %s/%s — the space already matches your selection.", org, space)
+		headline := fmt.Sprintf("Nothing to change on %s — the selected spaces already match your staged changes.", org)
 		s.renderResult(w, sess, rec, action, headline, "", true)
 		return
 	}
 
-	branch := fmt.Sprintf("portal/manage-users-%s-%s-%s", org, space, randomToken()[:8])
+	branch := fmt.Sprintf("portal/manage-users-%s-%s", org, randomToken()[:8])
 
 	if err := rec.Do("Creating branch "+branch, func() (string, error) {
 		return "", s.deps.GitLab.CreateBranch(ctx, s.deps.ConfigRepoProject, branch, s.deps.TargetBranch)
@@ -544,10 +561,8 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := rec.Do("Committing change", func() (string, error) {
-		msg := fmt.Sprintf("portal: manage users on %s/%s (by %s)", org, space, sess.Username)
-		return "", s.deps.GitLab.CommitFiles(ctx, s.deps.ConfigRepoProject, branch, msg, []gitlab.CommitAction{
-			{Action: "update", FilePath: filePath, Content: string(updated)},
-		})
+		msg := fmt.Sprintf("portal: manage users on %s across %d space(s) (by %s)", org, len(commitActions), sess.Username)
+		return "", s.deps.GitLab.CommitFiles(ctx, s.deps.ConfigRepoProject, branch, msg, commitActions)
 	}); err != nil {
 		s.renderResult(w, sess, rec, action, "", "", false)
 		return
@@ -569,15 +584,14 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 		u, err := s.deps.GitLab.OpenMR(ctx, s.deps.ConfigRepoProject, gitlab.OpenMRRequest{
 			SourceBranch: branch,
 			TargetBranch: s.deps.TargetBranch,
-			Title:        fmt.Sprintf("[portal] manage users on %s/%s", org, space),
+			Title:        fmt.Sprintf("[portal] manage users on %s (%d space(s))", org, len(commitActions)),
 			Description: fmt.Sprintf(
 				"Generated by cf-mgmt-portal.\n\n"+
 					"- **Foundation:** %s\n"+
 					"- **Org:** %s\n"+
-					"- **Space:** %s\n"+
 					"- **Requested by:** @%s\n\n"+
 					"### Changes\n%s",
-				s.deps.Foundation, org, space, sess.Username, opsSummary(ops, "space"),
+				s.deps.Foundation, org, sess.Username, spaceChangesSummary(changes),
 			),
 			AssigneeIDs: assignees,
 		})
@@ -592,6 +606,58 @@ func (s *Server) handleManageUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderResult(w, sess, rec, action, "MR opened. Platform team will review and merge.", mrURL, true)
+}
+
+// spaceChange is one space's staged batch in a multi-space manage-users submit.
+type spaceChange struct {
+	Space string      `json:"space"`
+	Ops   []mutate.Op `json:"ops"`
+}
+
+// parseSpaceChanges decodes the changes form field, drops empty entries, and
+// merges duplicate spaces (preserving first-seen order) so each space maps to
+// exactly one file edit in the commit. Returns the changes and total op count.
+func parseSpaceChanges(raw string) ([]spaceChange, int, error) {
+	var in []spaceChange
+	if err := json.Unmarshal([]byte(raw), &in); err != nil {
+		return nil, 0, err
+	}
+	idx := map[string]int{}
+	var out []spaceChange
+	total := 0
+	for _, ch := range in {
+		ch.Space = strings.TrimSpace(ch.Space)
+		if ch.Space == "" || len(ch.Ops) == 0 {
+			continue
+		}
+		if i, ok := idx[ch.Space]; ok {
+			out[i].Ops = append(out[i].Ops, ch.Ops...)
+		} else {
+			idx[ch.Space] = len(out)
+			out = append(out, ch)
+		}
+		total += len(ch.Ops)
+	}
+	return out, total, nil
+}
+
+// validPathSegment rejects names that could traverse outside the intended
+// config-repo directory when joined into a file path (org and space names come
+// from the form; authz is org-scoped, so a crafted "space" like ../other-org
+// must not reach path.Join).
+func validPathSegment(s string) bool {
+	return s != "" && s != "." && s != ".." &&
+		!strings.ContainsAny(s, "/\\") && !strings.HasPrefix(s, ".")
+}
+
+// spaceChangesSummary renders the staged per-space batches as markdown
+// sections for the MR body.
+func spaceChangesSummary(changes []spaceChange) string {
+	var b strings.Builder
+	for _, ch := range changes {
+		fmt.Fprintf(&b, "**%s**\n%s\n", ch.Space, opsSummary(ch.Ops, "space"))
+	}
+	return b.String()
 }
 
 // opsSummary renders the batch of role changes as a markdown list for the MR

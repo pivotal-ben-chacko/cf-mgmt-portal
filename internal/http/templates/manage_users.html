@@ -12,10 +12,12 @@
     <div class="card">
       <h2><img src="/assets/user.png" class="title-icon" alt="">Manage space users</h2>
       <p class="muted">
-        You must already hold OrgManager on the target org. Pick an org and space,
-        then stage changes: add a new user, move a user to the right to remove them
-        from the space entirely, or click a user on the left to toggle their
-        individual roles. All staged changes are captured in a single GitLab MR for review.
+        You must already hold OrgManager on the target org. Pick an org, then
+        edit as many of its spaces as you like — staged changes are kept while
+        you switch between spaces. Add a new user, move a user to the right to
+        remove them from the space entirely, or click a user on the left to
+        toggle their individual roles. Everything you stage is submitted at the
+        end as a single GitLab MR for review.
       </p>
 
       <div class="picker-row">
@@ -71,8 +73,7 @@
       <form id="manage-form" method="post" action="/actions/manage-users" style="margin-top:16px; display:none;">
         <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
         <input type="hidden" name="org" id="org-field">
-        <input type="hidden" name="space" id="space-field">
-        <input type="hidden" name="ops" id="ops-field">
+        <input type="hidden" name="changes" id="changes-field">
         <button type="submit" class="primary" id="submit-btn" disabled>Open MR with staged changes</button>
       </form>
     </div>
@@ -97,9 +98,16 @@
     var newOriginSel = document.getElementById('new-origin');
     var addHint = document.getElementById('add-hint');
 
-    // original[user] = {origin, roles:Set}  — as loaded (new users start with empty roles)
-    // state[user]    = {origin, roles:Set}  — edited (for users kept in space)
-    var original = {}, state = {}, newUsers = new Set();
+    // staged[space] = {
+    //   original[user] = {origin, roles:Set}  — as loaded (new users: empty roles)
+    //   state[user]    = {origin, roles:Set}  — edited roles for kept users
+    //   removed        = Set of users staged for full removal (right box)
+    //   news           = Set of users added in this session
+    // }
+    // The whole map survives switching spaces; only an org change clears it.
+    var staged = {};
+    var cur = '';        // currently displayed space
+    var prevOrg = '';
 
     function getJSON(url) {
       return fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
@@ -128,6 +136,13 @@
       .catch(function () { orgSel.innerHTML = '<option value="">(could not load orgs)</option>'; });
 
     orgSel.addEventListener('change', function () {
+      if (totalOps() > 0 &&
+          !confirm('Changing org discards the changes staged for ' + stagedSpaceNames().join(', ') + '. Continue?')) {
+        orgSel.value = prevOrg;
+        return;
+      }
+      prevOrg = orgSel.value;
+      staged = {}; cur = '';
       spaceSel.innerHTML = ''; spaceSel.disabled = true;
       hideEditor();
       if (!orgSel.value) return;
@@ -137,25 +152,34 @@
     });
 
     spaceSel.addEventListener('change', function () {
-      hideEditor();
-      if (!orgSel.value || !spaceSel.value) return;
-      getJSON('/api/space-users?org=' + encodeURIComponent(orgSel.value) + '&space=' + encodeURIComponent(spaceSel.value))
-        .then(loadUsers)
-        .catch(function () { pending.textContent = '(could not load users)'; });
+      cur = spaceSel.value;
+      if (!cur) { hideBoxes(); recompute(); return; }
+      if (staged[cur]) { renderSpace(); return; }
+      pending.textContent = 'Loading users…';
+      var loading = cur;
+      getJSON('/api/space-users?org=' + encodeURIComponent(orgSel.value) + '&space=' + encodeURIComponent(loading))
+        .then(function (d) {
+          if (initSpace(loading, d) && cur === loading) renderSpace();
+        })
+        .catch(function () { pending.textContent = '(could not load users for ' + loading + ')'; });
     });
 
-    function hideEditor() {
+    function hideBoxes() {
       shuttle.style.display = 'none';
       addBlock.style.display = 'none';
       rolesPanel.style.display = 'none';
-      form.style.display = 'none';
-      pending.textContent = '';
       addHint.textContent = ''; newUserInput.value = '';
-      original = {}; state = {}; newUsers = new Set();
     }
 
-    function loadUsers(d) {
-      original = {};
+    function hideEditor() {
+      hideBoxes();
+      form.style.display = 'none';
+      pending.textContent = '';
+    }
+
+    function initSpace(space, d) {
+      if (staged[space]) return true; // a stale duplicate fetch must not clobber edits
+      var original = {};
       (d.roles || []).forEach(function (r) {
         [['ldap', r.ldap], ['saml', r.saml], ['internal', r.internal]].forEach(function (g) {
           var origin = g[0];
@@ -165,14 +189,18 @@
           });
         });
       });
-      state = cloneState(original);
-      newUsers = new Set();
+      staged[space] = { original: original, state: cloneState(original), removed: new Set(), news: new Set() };
+      return true;
+    }
 
+    function renderSpace() {
+      var st = staged[cur];
       left.innerHTML = ''; right.innerHTML = '';
-      Object.keys(original).sort().forEach(function (u) {
-        var o = document.createElement('option'); o.value = u; o.textContent = u; left.appendChild(o);
+      Object.keys(st.original).sort().forEach(function (u) {
+        var o = document.createElement('option');
+        o.value = u; o.textContent = st.news.has(u) ? u + ' (new)' : u;
+        (st.removed.has(u) ? right : left).appendChild(o);
       });
-
       shuttle.style.display = 'flex';
       addBlock.style.display = 'block';
       form.style.display = 'block';
@@ -182,18 +210,20 @@
     }
 
     function addNewUser() {
+      if (!cur || !staged[cur]) return;
+      var st = staged[cur];
       var u = newUserInput.value.trim();
       if (!u) return;
-      if (original[u] || state[u]) { addHint.textContent = '“' + u + '” is already listed.'; return; }
+      if (st.original[u]) { addHint.textContent = '“' + u + '” is already listed in ' + cur + '.'; return; }
       var origin = newOriginSel.value;
-      original[u] = { origin: origin, roles: new Set() };
-      state[u] = { origin: origin, roles: new Set() };
-      newUsers.add(u);
+      st.original[u] = { origin: origin, roles: new Set() };
+      st.state[u] = { origin: origin, roles: new Set() };
+      st.news.add(u);
       var o = document.createElement('option');
       o.value = u; o.textContent = u + ' (new)';
       left.appendChild(o);
       newUserInput.value = '';
-      addHint.textContent = 'Added “' + u + '” (' + origin + '). Now tick the role(s) to assign below.';
+      addHint.textContent = 'Added “' + u + '” (' + origin + ') to ' + cur + '. Now tick the role(s) to assign below.';
       // Select the new user so its role checkboxes appear for immediate role selection.
       Array.prototype.slice.call(left.options).forEach(function (opt) { opt.selected = (opt.value === u); });
       left.dispatchEvent(new Event('change'));
@@ -204,71 +234,93 @@
       if (e.key === 'Enter') { e.preventDefault(); addNewUser(); }
     });
 
-    function moveSelected(from, to) {
-      Array.prototype.slice.call(from.selectedOptions).forEach(function (o) { to.appendChild(o); o.selected = false; });
+    function moveSelected(from, to, removing) {
+      if (!cur || !staged[cur]) return;
+      var st = staged[cur];
+      Array.prototype.slice.call(from.selectedOptions).forEach(function (o) {
+        if (removing) st.removed.add(o.value); else st.removed.delete(o.value);
+        to.appendChild(o); o.selected = false;
+      });
       rolesPanel.style.display = 'none';
       recompute();
     }
-    document.getElementById('toRemove').addEventListener('click', function () { moveSelected(left, right); });
-    document.getElementById('toKeep').addEventListener('click', function () { moveSelected(right, left); });
+    document.getElementById('toRemove').addEventListener('click', function () { moveSelected(left, right, true); });
+    document.getElementById('toKeep').addEventListener('click', function () { moveSelected(right, left, false); });
 
     left.addEventListener('change', function () {
+      if (!cur || !staged[cur]) return;
       if (left.selectedOptions.length !== 1) { rolesPanel.style.display = 'none'; return; }
+      var st = staged[cur];
       var u = left.selectedOptions[0].value;
-      rolesUser.textContent = u;
-      roleChecks.forEach(function (c) { c.checked = state[u] && state[u].roles.has(c.dataset.role); });
+      rolesUser.textContent = u + ' · ' + cur;
+      roleChecks.forEach(function (c) { c.checked = st.state[u] && st.state[u].roles.has(c.dataset.role); });
       rolesPanel.style.display = 'block';
     });
 
     roleChecks.forEach(function (c) {
       c.addEventListener('change', function () {
-        if (left.selectedOptions.length !== 1) return;
+        if (!cur || !staged[cur] || left.selectedOptions.length !== 1) return;
+        var st = staged[cur];
         var u = left.selectedOptions[0].value;
-        if (!state[u]) return;
-        if (c.checked) state[u].roles.add(c.dataset.role); else state[u].roles.delete(c.dataset.role);
+        if (!st.state[u]) return;
+        if (c.checked) st.state[u].roles.add(c.dataset.role); else st.state[u].roles.delete(c.dataset.role);
         recompute();
       });
     });
 
-    function computeOps() {
+    function computeOpsFor(space) {
+      var st = staged[space];
       var ops = [];
-      // Users staged for full removal (in the right box): remove every original role.
-      Array.prototype.slice.call(right.options).forEach(function (o) {
-        var u = o.value, orig = original[u];
-        if (!orig) return;
-        orig.roles.forEach(function (role) {
-          ops.push({ user: u, origin: orig.origin, role: role, action: 'remove' });
-        });
-      });
-      // Users kept in the space (left box): diff edited roles against original.
-      Array.prototype.slice.call(left.options).forEach(function (o) {
-        var u = o.value, orig = original[u], cur = state[u];
-        if (!orig || !cur) return;
+      Object.keys(st.original).forEach(function (u) {
+        var orig = st.original[u];
+        if (st.removed.has(u)) {
+          // Staged for full removal: drop every originally-held role.
+          orig.roles.forEach(function (role) {
+            ops.push({ user: u, origin: orig.origin, role: role, action: 'remove' });
+          });
+          return;
+        }
+        var curState = st.state[u];
+        if (!curState) return;
         ROLES.forEach(function (role) {
-          var was = orig.roles.has(role), now = cur.roles.has(role);
-          if (now && !was) ops.push({ user: u, origin: cur.origin, role: role, action: 'add' });
-          else if (!now && was) ops.push({ user: u, origin: cur.origin, role: role, action: 'remove' });
+          var was = orig.roles.has(role), now = curState.roles.has(role);
+          if (now && !was) ops.push({ user: u, origin: curState.origin, role: role, action: 'add' });
+          else if (!now && was) ops.push({ user: u, origin: curState.origin, role: role, action: 'remove' });
         });
       });
       return ops;
     }
 
+    function allChanges() {
+      return Object.keys(staged).map(function (sp) {
+        return { space: sp, ops: computeOpsFor(sp) };
+      }).filter(function (c) { return c.ops.length > 0; });
+    }
+    function totalOps() {
+      return allChanges().reduce(function (n, c) { return n + c.ops.length; }, 0);
+    }
+    function stagedSpaceNames() {
+      return allChanges().map(function (c) { return c.space; });
+    }
+
     function recompute() {
-      var ops = computeOps();
-      submitBtn.disabled = ops.length === 0;
-      if (!ops.length) { pending.textContent = 'No changes staged yet.'; return; }
-      pending.innerHTML = '<strong>' + ops.length + ' staged change(s):</strong> ' +
-        ops.map(function (op) {
-          return (op.action === 'remove' ? '−' : '+') + op.user + ' ' + op.role;
-        }).join(', ');
+      var changes = allChanges();
+      var total = totalOps();
+      submitBtn.disabled = total === 0;
+      if (!total) { pending.textContent = 'No changes staged yet.'; return; }
+      pending.innerHTML = '<strong>' + total + ' staged change(s) across ' + changes.length + ' space(s):</strong> ' +
+        changes.map(function (c) {
+          return '<strong>' + c.space + '</strong> — ' + c.ops.map(function (op) {
+            return (op.action === 'remove' ? '−' : '+') + op.user + ' ' + op.role;
+          }).join(', ');
+        }).join(' · ');
     }
 
     form.addEventListener('submit', function (e) {
-      var ops = computeOps();
-      if (!ops.length) { e.preventDefault(); return; }
+      var changes = allChanges();
+      if (!changes.length) { e.preventDefault(); return; }
       document.getElementById('org-field').value = orgSel.value;
-      document.getElementById('space-field').value = spaceSel.value;
-      document.getElementById('ops-field').value = JSON.stringify(ops);
+      document.getElementById('changes-field').value = JSON.stringify(changes);
     });
   })();
   </script>
