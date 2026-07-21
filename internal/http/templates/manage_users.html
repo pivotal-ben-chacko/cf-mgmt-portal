@@ -322,6 +322,15 @@
       document.getElementById('org-field').value = orgSel.value;
       document.getElementById('changes-field').value = JSON.stringify(changes);
     });
+
+    // Leaving the page (back to portal) discards the staging area — same
+    // confirmation contract as changing org.
+    document.querySelector('a.back').addEventListener('click', function (e) {
+      if (totalOps() > 0 &&
+          !confirm('You have staged changes for ' + stagedSpaceNames().join(', ') + '. Discard them and leave?')) {
+        e.preventDefault();
+      }
+    });
   })();
   </script>
 </body>
