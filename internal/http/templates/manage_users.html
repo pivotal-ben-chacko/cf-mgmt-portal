@@ -305,15 +305,11 @@
 
     function recompute() {
       var changes = allChanges();
-      var total = totalOps();
-      submitBtn.disabled = total === 0;
-      if (!total) { pending.textContent = 'No changes staged yet.'; return; }
-      pending.innerHTML = '<strong>' + total + ' staged change(s) across ' + changes.length + ' space(s):</strong> ' +
-        changes.map(function (c) {
-          return '<strong>' + c.space + '</strong> — ' + c.ops.map(function (op) {
-            return (op.action === 'remove' ? '−' : '+') + op.user + ' ' + op.role;
-          }).join(', ');
-        }).join(' · ');
+      submitBtn.disabled = changes.length === 0;
+      if (!changes.length) { pending.textContent = 'No changes staged yet.'; return; }
+      pending.innerHTML = 'Staged changes for: ' + changes.map(function (c) {
+        return '<strong>' + c.space + '</strong>';
+      }).join(' · ');
     }
 
     form.addEventListener('submit', function (e) {
